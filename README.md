@@ -20,7 +20,7 @@ https://<your-render-service>.onrender.com/
 
 ## 使用說明截圖
 
-請將截圖放在 `assets` 資料夾，檔名如下：
+截圖尚未加入。請將截圖放在 `assets` 資料夾，檔名如下：
 
 ```text
 assets/screenshot-hero.png
@@ -28,17 +28,17 @@ assets/screenshot-report.png
 assets/screenshot-next-fix.png
 ```
 
-### 主畫面
+- `screenshot-hero.png`：主畫面，建議包含圖片預覽、總分、檢查報告卡與主要指標
+- `screenshot-report.png`：檢查報告區，建議包含複製送印詢問文字與下載報告按鈕
+- `screenshot-next-fix.png`：修復建議區，建議包含目前圖片資訊、Next Fix 與適合印多大
 
+截圖加入後，可以把本段改成 Markdown 圖片：
+
+```md
 ![主畫面](assets/screenshot-hero.png)
-
-### 檢查報告
-
 ![檢查報告](assets/screenshot-report.png)
-
-### 修復建議
-
 ![修復建議](assets/screenshot-next-fix.png)
+```
 
 ## 功能清單
 
