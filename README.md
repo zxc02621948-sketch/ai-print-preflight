@@ -4,19 +4,9 @@ AI 圖印刷前檢查器是一個純前端 MVP，用來協助使用者在送印�
 
 ## Demo
 
-目前尚未部署公開 Demo。
+GitHub Pages Demo：
 
-如果部署到 GitHub Pages，可填入：
-
-```text
-https://<your-github-username>.github.io/<repo-name>/
-```
-
-如果部署到 Render，可填入：
-
-```text
-https://<your-render-service>.onrender.com/
-```
+https://zxc02621948-sketch.github.io/ai-print-preflight/
 
 ## 使用說明截圖
 
@@ -110,7 +100,7 @@ CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，�
 - 支援匯出高解析 PNG 或印刷交付包
 - 支援向量化模式，處理 Logo、徽章、圖示類素材
 - 支援多張圖片批次檢查
-- 支援 GitHub Pages / Render 公開部署
+- 加入更多部署範例與使用情境說明
 
 ## 技術說明
 
