@@ -758,7 +758,7 @@ function downloadReport() {
   const m = state.metrics;
   const fix = chooseFix(m);
   const lines = [
-    "AI 圖印刷前檢查報告",
+    "AI 圖印刷前檢查與修復報告",
     `檔名：${m.fileName}`,
     `圖片像素：${m.pixelWidth} x ${m.pixelHeight} px`,
     `輸出尺寸：${m.print.widthMm} x ${m.print.heightMm} mm`,
