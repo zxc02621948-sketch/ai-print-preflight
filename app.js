@@ -33,6 +33,7 @@ const els = {
   viewDistance: document.querySelector("#viewDistance"),
   bleedMm: document.querySelector("#bleedMm"),
   hasText: document.querySelector("#hasText"),
+  isLogoAsset: document.querySelector("#isLogoAsset"),
   analyzeButton: document.querySelector("#analyzeButton"),
   infoPixels: document.querySelector("#infoPixels"),
   infoTarget: document.querySelector("#infoTarget"),
@@ -109,7 +110,7 @@ els.preset.addEventListener("change", () => {
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.hasText].forEach((el) => {
+[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.hasText, els.isLogoAsset].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -216,6 +217,7 @@ function getPrintSettings() {
     distance: els.viewDistance.value,
     bleedMm: Number(els.bleedMm.value) || 0,
     hasText: els.hasText.checked,
+    isLogoAsset: els.isLogoAsset.checked,
   };
 }
 
@@ -486,6 +488,10 @@ function renderAdvice(metrics) {
     advice.push("圖片內若有小字，最好在 Illustrator/Figma 重新排成向量文字。");
   }
 
+  if (metrics.print.isLogoAsset) {
+    advice.push("此圖已標記為 Logo / 圖示 / 徽章素材，可考慮使用 Inkscape Trace Bitmap 免費轉成 SVG；複雜角色圖或厚塗圖不建議硬轉向量。");
+  }
+
   if (dpiStatus.level === "green" && colorStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
     advice.push("所有主要指標皆為綠燈，建議下一步做 100% 局部打樣，確認暗部、細線與色彩後再正式送印。");
   }
@@ -557,6 +563,7 @@ function buildShopMessage(metrics) {
     `你好，我想印 ${getUseLabel()}。`,
     `檔案像素為 ${metrics.pixelWidth} x ${metrics.pixelHeight} px，目標輸出尺寸為 ${metrics.print.widthMm} x ${metrics.print.heightMm} mm，目前依尺寸估算的有效 DPI 約 ${Math.round(metrics.dpi.effective)}。`,
     `目前設定出血 ${metrics.print.bleedMm} mm，但仍需確認背景是否有延伸到出血區。`,
+    metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材，也想確認是否適合轉成 SVG 向量檔。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
     `CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，請協助轉檔或告知規格。`,
     "請問這樣適合送印嗎？如果需要調整解析度、出血、裁切或轉色，也請告訴我。",
   ].join("\n");
@@ -683,6 +690,26 @@ function chooseFix(metrics) {
     };
   }
 
+  if (metrics.print.isLogoAsset) {
+    return {
+      title: "向量化圖示：使用 Inkscape Trace Bitmap",
+      summary: "這張圖已標記為 Logo / 圖示 / 徽章素材。若邊界清楚、色塊簡單，可嘗試用 Inkscape 免費轉成 SVG。",
+      trustNote: "Inkscape 是免費開源的向量繪圖軟體，內建 Trace Bitmap 可把點陣圖描成 SVG。它適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片、複雜光影或很多漸層的 AI 圖。",
+      linkText: "下載 Inkscape",
+      url: "https://inkscape.org/",
+      steps: [
+        "下載並安裝 Inkscape。",
+        "用 File > Import 匯入圖片。",
+        "點選圖片，使用 Path > Trace Bitmap。",
+        "黑白 Logo 可先試 Single Scan；彩色徽章可試 Multiple Scans / Colors。",
+        "預覽邊緣是否乾淨，避免產生太多碎色塊。",
+        "按 Apply 後，把原本的點陣圖移開或刪除，只保留描出的向量。",
+        "存成 SVG；若要交給印刷店，可再另存 PDF。",
+        "若結果變髒或檔案很重，代表這張圖不適合硬轉向量，請改用高解析 PNG/PDF。",
+      ],
+    };
+  }
+
   if (noiseStatus.level !== "green") {
     const preset = getNoisePreset(metrics.noise);
     return {
@@ -766,20 +793,21 @@ function downloadReport() {
     `總分：${m.scores.total}`,
     `出血：${m.print.bleedMm} mm`,
     `含小字/細線：${m.print.hasText ? "是" : "否"}`,
-      `銳利度估計：${m.sharpness.toFixed(2)}`,
-      `高風險 RGB 色彩比例：${Math.round(m.colorRisk.riskyRatio * 100)}%`,
-      `300 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
-      `150 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
-      `72 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
-      `建議下一步：${fix.title}`,
-      `工具說明：${fix.trustNote}`,
+    `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
+    `銳利度估計：${m.sharpness.toFixed(2)}`,
+    `高風險 RGB 色彩比例：${Math.round(m.colorRisk.riskyRatio * 100)}%`,
+    `300 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
+    `150 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
+    `72 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
+    `建議下一步：${fix.title}`,
+    `工具說明：${fix.trustNote}`,
     "",
     "修復步驟：",
     ...fix.steps.map((step, index) => `${index + 1}. ${step}`),
-      "",
-      "給印刷店備註：",
-      "此檔案為 AI 生成圖片的印刷前數位評估，不保證實際印刷結果。正式 CMYK 轉換請依店內 ICC Profile、紙材、總墨量與 PDF/X 規格處理。",
-    ];
+    "",
+    "給印刷店備註：",
+    "此檔案為 AI 生成圖片的印刷前數位評估，不保證實際印刷結果。正式 CMYK 轉換請依店內 ICC Profile、紙材、總墨量與 PDF/X 規格處理。",
+  ];
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
