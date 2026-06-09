@@ -34,6 +34,7 @@ const els = {
   bleedMm: document.querySelector("#bleedMm"),
   hasText: document.querySelector("#hasText"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
+  needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
   infoPixels: document.querySelector("#infoPixels"),
   infoTarget: document.querySelector("#infoTarget"),
@@ -110,7 +111,7 @@ els.preset.addEventListener("change", () => {
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.hasText, els.isLogoAsset].forEach((el) => {
+[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.hasText, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -218,6 +219,7 @@ function getPrintSettings() {
     bleedMm: Number(els.bleedMm.value) || 0,
     hasText: els.hasText.checked,
     isLogoAsset: els.isLogoAsset.checked,
+    needsEditableLayers: els.needsEditableLayers.checked,
   };
 }
 
@@ -492,6 +494,10 @@ function renderAdvice(metrics) {
     advice.push("此圖已標記為 Logo / 圖示 / 徽章素材，可考慮使用 Inkscape Trace Bitmap 免費轉成 SVG；複雜角色圖或厚塗圖不建議硬轉向量。");
   }
 
+  if (metrics.print.needsEditableLayers) {
+    advice.push("此圖已標記為需要拆成可編輯圖層，可考慮使用 Canva 魔法圖層做粗略分層；分層結果仍需人工檢查與整理。");
+  }
+
   if (dpiStatus.level === "green" && colorStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
     advice.push("所有主要指標皆為綠燈，建議下一步做 100% 局部打樣，確認暗部、細線與色彩後再正式送印。");
   }
@@ -564,6 +570,7 @@ function buildShopMessage(metrics) {
     `檔案像素為 ${metrics.pixelWidth} x ${metrics.pixelHeight} px，目標輸出尺寸為 ${metrics.print.widthMm} x ${metrics.print.heightMm} mm，目前依尺寸估算的有效 DPI 約 ${Math.round(metrics.dpi.effective)}。`,
     `目前設定出血 ${metrics.print.bleedMm} mm，但仍需確認背景是否有延伸到出血區。`,
     metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材，也想確認是否適合轉成 SVG 向量檔。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
+    metrics.print.needsEditableLayers ? "我也想嘗試將圖片拆成可編輯圖層，方便後續調整文字、物件或版面。" : "目前沒有特別要求拆成可編輯圖層。",
     `CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，請協助轉檔或告知規格。`,
     "請問這樣適合送印嗎？如果需要調整解析度、出血、裁切或轉色，也請告訴我。",
   ].join("\n");
@@ -690,6 +697,26 @@ function chooseFix(metrics) {
     };
   }
 
+  if (metrics.print.needsEditableLayers) {
+    return {
+      title: "拆成可編輯圖層：使用 Canva 魔法圖層",
+      summary: "這張圖已標記為需要拆成可編輯圖層。可用 Canva 的魔法圖層先做粗略分層，再手動整理物件、文字與版面。",
+      trustNote: "Canva 魔法圖層適合把圖片粗略拆成可編輯元素，方便後續重排、替換或微調。它不是專業向量化，也不保證能完美分離所有物件；複雜厚塗、煙霧、髮絲或細碎光效仍需要人工檢查。",
+      linkText: "前往 Canva",
+      url: "https://www.canva.com/",
+      steps: [
+        "打開 Canva 並建立或開啟一個設計。",
+        "上傳圖片並放到畫布上。",
+        "點選圖片。",
+        "點選編輯圖片或 Edit image。",
+        "在工具中選擇魔法圖層。",
+        "等待 Canva 粗略拆分圖層。",
+        "檢查每個圖層是否拆得合理，必要時手動刪除、重排或修正。",
+        "若要印刷，最後仍需確認尺寸、出血、解析度與印刷店輸出規格。",
+      ],
+    };
+  }
+
   if (metrics.print.isLogoAsset) {
     return {
       title: "向量化圖示：使用 Inkscape Trace Bitmap",
@@ -794,6 +821,7 @@ function downloadReport() {
     `出血：${m.print.bleedMm} mm`,
     `含小字/細線：${m.print.hasText ? "是" : "否"}`,
     `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
+    `需要拆成可編輯圖層：${m.print.needsEditableLayers ? "是" : "否"}`,
     `銳利度估計：${m.sharpness.toFixed(2)}`,
     `高風險 RGB 色彩比例：${Math.round(m.colorRisk.riskyRatio * 100)}%`,
     `300 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
