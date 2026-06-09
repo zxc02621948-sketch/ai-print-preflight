@@ -820,14 +820,15 @@ function inkscapeFix() {
   return {
     title: "向量化圖示：使用 Inkscape Trace Bitmap",
     summary: "Logo / 圖示 / 徽章若邊界清楚、色塊簡單，可先用 Inkscape 免費轉成 SVG。",
-    trustNote: "Inkscape 是免費開源的向量繪圖軟體，內建 Trace Bitmap 可把點陣圖描成 SVG。它適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片、複雜光影或很多漸層的 AI 圖。",
+    trustNote: "Inkscape 是免費、開源的向量繪圖軟體。開源代表程式原始碼公開，社群可以檢查與改進，比來路不明的轉檔網站更透明；仍建議只從 inkscape.org 官方頁下載。它內建 Trace Bitmap，可把點陣圖描成 SVG，適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片或複雜漸層。",
     linkText: "前往 Inkscape 1.4.4 下載頁",
     url: "https://inkscape.org/release/inkscape-1.4.4/",
     steps: [
       "打開 Inkscape 1.4.4 下載頁。",
       "在第一層選擇 Windows。",
       "在第二層選擇 64-bit；如果不確定，通常選 64-bit / x86_64。",
-      "在第三層選擇 Windows Installer Package / msi，這是一般 Windows 安裝檔。",
+      "在第三層選擇 Windows Installer Package / msi。這裡的 MSI 是 Microsoft Installer，不是微星，也跟顯卡無關。",
+      "MSI 是 Windows 常見安裝包格式，適合一般使用者；下載後照安裝精靈下一步即可。",
       "不要選 Source Archive；7z 壓縮檔通常給進階使用者，不建議新手選。",
       "下載完成後執行 .msi 安裝檔並完成安裝。",
       "用 File > Import 匯入圖片。",
