@@ -821,10 +821,10 @@ function inkscapeFix() {
     title: "向量化圖示：使用 Inkscape Trace Bitmap",
     summary: "Logo / 圖示 / 徽章若邊界清楚、色塊簡單，可先用 Inkscape 免費轉成 SVG。",
     trustNote: "Inkscape 是免費開源的向量繪圖軟體，內建 Trace Bitmap 可把點陣圖描成 SVG。它適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片、複雜光影或很多漸層的 AI 圖。",
-    linkText: "下載 Inkscape",
-    url: "https://inkscape.org/",
+    linkText: "前往 Inkscape Windows 下載頁",
+    url: "https://inkscape.org/download/windows/",
     steps: [
-      "下載並安裝 Inkscape。",
+      "打開 Inkscape Windows 下載頁，下載並安裝 Inkscape。",
       "用 File > Import 匯入圖片。",
       "點選圖片，使用 Path > Trace Bitmap。",
       "黑白 Logo 可先試 Single Scan；彩色徽章可試 Multiple Scans / Colors。",
