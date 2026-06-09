@@ -242,6 +242,7 @@ input[type="number"] {
 }
 
 .info-card,
+.workflow-card,
 .print-size-card,
 .report-card {
   border: 1px solid var(--line);
@@ -270,6 +271,28 @@ input[type="number"] {
 
 .info-grid strong {
   overflow-wrap: anywhere;
+}
+
+.workflow-card {
+  background: #fffdfa;
+}
+
+.workflow-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.workflow-card ol {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.workflow-card li {
+  line-height: 1.55;
 }
 
 #previewImage {

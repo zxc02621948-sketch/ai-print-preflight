@@ -40,6 +40,8 @@ const els = {
   infoTarget: document.querySelector("#infoTarget"),
   infoDpi: document.querySelector("#infoDpi"),
   infoUse: document.querySelector("#infoUse"),
+  workflowSummary: document.querySelector("#workflowSummary"),
+  workflowSteps: document.querySelector("#workflowSteps"),
   canvas: document.querySelector("#analysisCanvas"),
   scoreBand: document.querySelector("#scoreBand"),
   scoreLabel: document.querySelector("#scoreLabel"),
@@ -381,9 +383,71 @@ function renderMetrics(metrics) {
   setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
   renderImageInfo(metrics);
   renderPrintableSizes(metrics);
+  renderWorkflowOrder(metrics);
 
   renderAdvice(metrics);
   renderFixRecommendation(metrics);
+}
+
+function renderWorkflowOrder(metrics) {
+  const workflow = chooseWorkflow(metrics);
+  els.workflowSummary.textContent = workflow.summary;
+  els.workflowSteps.innerHTML = workflow.steps.map((step) => `<li>${step}</li>`).join("");
+}
+
+function chooseWorkflow(metrics) {
+  if (metrics.print.needsEditableLayers && metrics.print.isLogoAsset) {
+    return {
+      summary: "同時需要可編輯圖層與向量化時，先決定主要目的：要重排版面先分層；要無限放大 Logo 則先向量化。",
+      steps: [
+        "先判斷主要目的：改物件、改文字、重排版面時，先用 Canva 魔法圖層。",
+        "如果主要目的是 Logo / 圖示無限放大，先用 Inkscape Trace Bitmap 向量化。",
+        "完成分層或向量化後，再確認輸出比例、出血與安全邊界。",
+        "若最後仍是點陣輸出，再回本工具檢查有效 DPI；不足時才做 Upscayl 放大。",
+        "最後做必要的降噪、銳化、CMYK 規格確認與 100% 局部打樣。",
+      ],
+    };
+  }
+
+  if (metrics.print.needsEditableLayers) {
+    return {
+      summary: "需要拆圖層時，先做會改版面的事情，再做放大；這樣檔案比較小，Canva / Photopea 也比較好處理。",
+      steps: [
+        "先確認輸出尺寸、方向、比例、留白與是否需要出血。",
+        "用 Canva 魔法圖層粗略拆分物件。",
+        "先整理圖層、重排文字、調整物件與版面。",
+        "匯出高解析 PNG 或 PDF。",
+        "回到本工具重新檢查有效 DPI；如果不足，再用 Upscayl 放大。",
+        "最後做輕度降噪 / 銳化，並產生 100% 局部打樣。",
+      ],
+    };
+  }
+
+  if (metrics.print.isLogoAsset) {
+    return {
+      summary: "Logo / 圖示 / 徽章通常先考慮向量化；成功向量化後，就不需要先放大點陣圖。",
+      steps: [
+        "先確認圖片邊界是否清楚、背景是否乾淨、色塊是否簡單。",
+        "用 Inkscape Trace Bitmap 轉成 SVG。",
+        "清理節點、碎色塊與不必要的細節。",
+        "輸出 SVG；若要交給印刷店，可另存 PDF。",
+        "如果向量化結果變髒或檔案很重，改用高解析 PNG/PDF，不要硬轉。",
+        "最後再依印刷店規格確認 CMYK、PDF/X、出血與打樣。",
+      ],
+    };
+  }
+
+  return {
+    summary: "一般 AI 海報或角色圖建議先處理版面，再放大；最後才做印刷輸出檢查。",
+    steps: [
+      "先決定輸出尺寸、方向與比例，確認是否需要裁切、補背景或加出血。",
+      "先做會改版面的事情，例如裁切、補背景、重排文字或物件。",
+      "回到本工具檢查有效 DPI；不足時再用 Upscayl 放大。",
+      "放大後再做輕度降噪與銳化，避免先修完又被放大破壞。",
+      "做 100% 局部打樣，確認臉、細線、暗部與色彩。",
+      "最後依印刷店規格處理 CMYK、PDF/X 或其他交付格式。",
+    ],
+  };
 }
 
 function renderImageInfo(metrics) {
@@ -811,6 +875,7 @@ function downloadReport() {
   if (!state.metrics) return;
   const m = state.metrics;
   const fix = chooseFix(m);
+  const workflow = chooseWorkflow(m);
   const lines = [
     "AI 圖印刷前檢查與修復報告",
     `檔名：${m.fileName}`,
@@ -827,6 +892,11 @@ function downloadReport() {
     `300 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
     `150 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
     `72 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
+    "",
+    "處理順序建議：",
+    workflow.summary,
+    ...workflow.steps.map((step, index) => `${index + 1}. ${step}`),
+    "",
     `建議下一步：${fix.title}`,
     `工具說明：${fix.trustNote}`,
     "",

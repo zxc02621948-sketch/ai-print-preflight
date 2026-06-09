@@ -43,6 +43,7 @@ https://zxc02621948-sketch.github.io/ai-print-preflight/
   - 300 DPI 精細印刷
   - 150 DPI 一般海報
   - 72 DPI 遠距看板
+- 依用途顯示處理順序建議，例如先分層、先向量化或先放大
 - 依最主要問題推薦下一步修復工具與操作步驟
 - 可標記 Logo / 圖示 / 徽章素材，推薦使用 Inkscape 免費向量化為 SVG
 - 可標記需要拆成可編輯圖層，推薦使用 Canva 魔法圖層做粗略分層
