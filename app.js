@@ -21,6 +21,7 @@ const state = {
   fixPlanSignature: "",
   activeFixIndex: 0,
   currentFix: null,
+  guideTrigger: null,
 };
 
 const els = {
@@ -35,7 +36,6 @@ const els = {
   heightMm: document.querySelector("#heightMm"),
   viewDistance: document.querySelector("#viewDistance"),
   bleedMm: document.querySelector("#bleedMm"),
-  hasText: document.querySelector("#hasText"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
@@ -73,10 +73,24 @@ const els = {
   fixStepSummary: document.querySelector("#fixStepSummary"),
   fixStepTrustNote: document.querySelector("#fixStepTrustNote"),
   fixStepList: document.querySelector("#fixStepList"),
+  fixExtraGuides: document.querySelector("#fixExtraGuides"),
   fixLink: document.querySelector("#fixLink"),
   fixPrev: document.querySelector("#fixPrev"),
   fixNext: document.querySelector("#fixNext"),
   reuploadFixed: document.querySelector("#reuploadFixed"),
+  openVectorModal: document.querySelector("#openVectorModal"),
+  openVectorTutorial: document.querySelector("#openVectorTutorial"),
+  vectorModal: document.querySelector("#vectorModal"),
+  closeVectorModal: document.querySelector("#closeVectorModal"),
+  vectorModalDone: document.querySelector("#vectorModalDone"),
+  openVectorTutorialFromModal: document.querySelector("#openVectorTutorialFromModal"),
+  guideModal: document.querySelector("#guideModal"),
+  closeGuideModal: document.querySelector("#closeGuideModal"),
+  guideModalDone: document.querySelector("#guideModalDone"),
+  guideModalEyebrow: document.querySelector("#guideModalEyebrow"),
+  guideModalTitle: document.querySelector("#guideModalTitle"),
+  guideModalSummary: document.querySelector("#guideModalSummary"),
+  guideModalContent: document.querySelector("#guideModalContent"),
   toolDialog: document.querySelector("#toolDialog"),
   dialogTitle: document.querySelector("#dialogTitle"),
   dialogSummary: document.querySelector("#dialogSummary"),
@@ -92,11 +106,35 @@ els.reuploadFixed.addEventListener("click", () => els.fileInput.click());
 els.fixLink.addEventListener("click", openToolDialog);
 els.fixPrev.addEventListener("click", () => setActiveFix(state.activeFixIndex - 1));
 els.fixNext.addEventListener("click", () => setActiveFix(state.activeFixIndex + 1));
+els.openVectorModal.addEventListener("click", openVectorModal);
+els.openVectorTutorial.addEventListener("click", openVectorTutorialGuide);
+els.closeVectorModal.addEventListener("click", closeVectorModal);
+els.vectorModalDone.addEventListener("click", closeVectorModal);
+els.openVectorTutorialFromModal.addEventListener("click", openVectorTutorialGuide);
+els.vectorModal.addEventListener("click", (event) => {
+  if (event.target === els.vectorModal) closeVectorModal();
+});
+els.closeGuideModal.addEventListener("click", closeGuideModal);
+els.guideModalDone.addEventListener("click", closeGuideModal);
+els.guideModal.addEventListener("click", (event) => {
+  if (event.target === els.guideModal) closeGuideModal();
+});
 els.confirmOpenTool.addEventListener("click", confirmOpenTool);
 els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
 els.analyzeButton.addEventListener("click", analyze);
 els.copyShopMessage.addEventListener("click", copyShopMessage);
 els.downloadReport.addEventListener("click", downloadReport);
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !els.guideModal.hidden) {
+    closeGuideModal();
+    return;
+  }
+
+  if (event.key === "Escape" && !els.vectorModal.hidden) {
+    closeVectorModal();
+  }
+});
 
 ["dragenter", "dragover"].forEach((type) => {
   els.dropZone.addEventListener(type, (event) => {
@@ -126,7 +164,7 @@ els.preset.addEventListener("change", () => {
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.hasText, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
+[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -134,7 +172,12 @@ els.preset.addEventListener("change", () => {
 });
 
 async function loadFile(file) {
-  if (!file || !file.type.startsWith("image/")) return;
+  if (!file) return;
+
+  if (!isSupportedRasterFile(file)) {
+    resetForUnsupportedFile(file);
+    return;
+  }
 
   state.fileName = file.name;
   const url = URL.createObjectURL(file);
@@ -152,6 +195,59 @@ async function loadFile(file) {
     analyze();
   };
   image.src = url;
+}
+
+function isSupportedRasterFile(file) {
+  return /^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name || "");
+}
+
+function resetForUnsupportedFile(file) {
+  state.fileName = file.name || "";
+  state.image = null;
+  state.bitmap = null;
+  state.metrics = null;
+  state.fixPlan = null;
+  state.fixPlanSignature = "";
+  state.activeFixIndex = 0;
+  state.currentFix = null;
+
+  els.previewImage.removeAttribute("src");
+  els.previewImage.style.display = "none";
+  els.emptyState.style.display = "block";
+  els.emptyState.textContent = "目前只支援 PNG、JPG、WebP。SVG / PDF / AI 請在 Inkscape、Illustrator 或交由印刷店檢查；若要回本工具評估，請另存成 PNG、JPG 或 WebP。";
+  els.analyzeButton.disabled = true;
+  els.downloadReport.disabled = true;
+  els.copyShopMessage.disabled = true;
+  els.reuploadFixed.disabled = true;
+
+  els.scoreBand.className = "score-band";
+  els.scoreLabel.textContent = "格式不支援";
+  els.scoreValue.textContent = "--";
+  setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "待圖片" });
+  setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "待圖片" });
+  setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "待圖片" });
+  setMetric(els.colorMetric, els.colorStatus, "--", { level: "", label: "待圖片" });
+  setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "待圖片" });
+  els.infoPixels.textContent = "--";
+  els.infoTarget.textContent = "--";
+  els.infoDpi.textContent = "--";
+  els.infoUse.textContent = "--";
+  els.workflowSummary.textContent = "SVG / PDF / AI 屬於向量或交付檔，請用專業編輯工具放大檢查，或匯出點陣圖後再回本工具檢查有效 DPI。";
+  els.workflowSteps.innerHTML = "<li>若要檢查印刷解析度，請從向量工具匯出 PNG、JPG 或 WebP。</li><li>若要交付給店家，建議使用 PDF、AI、TIFF、PNG 或店家指定格式。</li>";
+  els.adviceList.innerHTML = "<li>此工具不再替 SVG 打分，避免給出沒有實質意義的分數。</li>";
+  els.fixTitle.textContent = "不支援此格式";
+  els.fixSummary.textContent = "請改用 PNG、JPG、WebP 進行印刷前檢查。";
+  els.fixSteps.innerHTML = "<li>SVG / PDF / AI 請回向量軟體或交由店家做交付檢查。</li>";
+  els.fixTabs.innerHTML = "";
+  els.fixStepLabel.textContent = "Format";
+  els.fixStepTitle.textContent = "不支援此格式";
+  els.fixStepSummary.textContent = "這類檔案比較適合在 Inkscape、Illustrator、Acrobat 或印刷店流程中確認。";
+  els.fixStepTrustNote.textContent = "本工具專注檢查 AI 生成點陣圖的有效 DPI、噪點、色偏風險與出血設定。";
+  els.fixStepList.innerHTML = "<li>若想回本工具檢查解析度，請先另存 PNG、JPG 或 WebP。</li><li>若已是正式交付檔，請交由印刷店確認 PDF/AI/TIFF/PNG 等格式需求。</li>";
+  els.fixExtraGuides.innerHTML = "";
+  els.fixLink.disabled = true;
+  els.fixPrev.disabled = true;
+  els.fixNext.disabled = true;
 }
 
 function loadSampleImage() {
@@ -201,11 +297,10 @@ function analyze() {
   const sharpness = estimateSharpness(sampled);
   const noise = estimateNoise(sampled);
   const colorRisk = estimateCmykRisk(sampled);
-  const textRisk = els.hasText.checked ? 14 : 0;
   const bleedScore = print.bleedMm >= 3 ? 10 : print.bleedMm > 0 ? 7 : 3;
 
   const dpiScore = scoreDpi(dpi.effective, print.distance);
-  const sharpScore = scoreSharpness(sharpness) - textRisk;
+  const sharpScore = scoreSharpness(sharpness);
   const noiseScore = scoreNoise(noise);
   const colorScore = scoreColor(colorRisk);
   const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + colorScore + bleedScore), 0, 100);
@@ -232,7 +327,6 @@ function getPrintSettings() {
     heightMm: Number(els.heightMm.value) || 1,
     distance: els.viewDistance.value,
     bleedMm: Number(els.bleedMm.value) || 0,
-    hasText: els.hasText.checked,
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
   };
@@ -364,7 +458,7 @@ function scoreColor(risk) {
 function normalizeTotal(rawTotal, data) {
   const levels = [
     statusForDpi(data.dpi.effective, data.print.distance).level,
-    statusForSharpness(data.sharpness, data.print.hasText).level,
+    statusForSharpness(data.sharpness).level,
     statusForNoise(data.noise).level,
     statusForColor(data.colorRisk).level,
     statusForBleed(data.print.bleedMm).level,
@@ -390,7 +484,7 @@ function renderMetrics(metrics) {
   els.scoreValue.textContent = total;
 
   setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.distance));
-  setMetric(els.sharpMetric, els.sharpStatus, metrics.sharpness.toFixed(1), statusForSharpness(metrics.sharpness, metrics.print.hasText));
+  setMetric(els.sharpMetric, els.sharpStatus, metrics.sharpness.toFixed(1), statusForSharpness(metrics.sharpness));
   setMetric(els.noiseMetric, els.noiseStatus, `${Math.round(metrics.noise.speckleRatio * 100)}%`, statusForNoise(metrics.noise));
   setMetric(els.colorMetric, els.colorStatus, `${Math.round(metrics.colorRisk.riskyRatio * 100)}%`, statusForColor(metrics.colorRisk));
   setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
@@ -411,13 +505,13 @@ function renderWorkflowOrder(metrics) {
 function chooseWorkflow(metrics) {
   if (metrics.print.needsEditableLayers && metrics.print.isLogoAsset) {
     return {
-      summary: "同時需要可編輯圖層與向量化時，先決定主要目的：要重排版面先分層；要無限放大 Logo 則先向量化。",
+      summary: "Logo / 圖示若也需要改物件，先處理版面與圖層，再回來檢查解析度；向量化只在超大輸出、改色拆物件或店家要求時再做。",
       steps: [
-        "先判斷主要目的：改物件、改文字、重排版面時，先用 Canva 魔法圖層。",
-        "如果主要目的是 Logo / 圖示無限放大，先用 Inkscape Trace Bitmap 向量化。",
-        "完成分層或向量化後，再確認輸出比例、出血與安全邊界。",
-        "若最後仍是點陣輸出，再回本工具檢查有效 DPI；不足時才做 Upscayl 放大。",
-        "最後做必要的降噪、銳化、CMYK 規格確認與 100% 局部打樣。",
+        "先確認輸出尺寸、方向、比例、留白與出血。",
+        "如果要重排物件或改版面，先用 Canva 魔法圖層或 Photopea / Illustrator 處理。",
+        "回本工具檢查有效 DPI；不足時先用 Upscayl 放大，這是多數送印情境最簡單的路線。",
+        "只有需要超大尺寸、長期重複使用、改色拆物件或店家要求向量檔時，再考慮 Inkscape Trace Bitmap。",
+        "最後做 100% 局部打樣，確認邊緣、暗部與色彩。",
       ],
     };
   }
@@ -438,13 +532,13 @@ function chooseWorkflow(metrics) {
 
   if (metrics.print.isLogoAsset) {
     return {
-      summary: "Logo / 圖示 / 徽章通常先考慮向量化；成功向量化後，就不需要先放大點陣圖。",
+      summary: "Logo / 圖示 / 徽章先走高解析 PNG/PDF 路線；向量化是進階選項，不是送印必做。",
       steps: [
-        "先確認圖片邊界是否清楚、背景是否乾淨、色塊是否簡單。",
-        "用 Inkscape Trace Bitmap 轉成 SVG。",
-        "清理節點、碎色塊與不必要的細節。",
-        "輸出 SVG；若要交給印刷店，可另存 PDF。",
-        "如果向量化結果變髒或檔案很重，改用高解析 PNG/PDF，不要硬轉。",
+        "先用本工具確認有效 DPI、出血和色彩風險。",
+        "如果 DPI 不足，先用 Upscayl 放大，通常比硬轉向量更快。",
+        "放大後檢查邊緣、尖角和色塊是否乾淨。",
+        "只有需要超大輸出、長期重複使用、改色拆物件或店家要求向量檔時，再用 Inkscape Trace Bitmap。",
+        "向量化結果如果變髒或需要大量修節點，就回到高解析 PNG/PDF 路線。",
         "最後再依印刷店規格確認 CMYK、PDF/X、出血與打樣。",
       ],
     };
@@ -457,7 +551,7 @@ function chooseWorkflow(metrics) {
       "先做會改版面的事情，例如裁切、補背景、重排文字或物件。",
       "回到本工具檢查有效 DPI；不足時再用 Upscayl 放大。",
       "放大後再做輕度降噪與銳化，避免先修完又被放大破壞。",
-      "做 100% 局部打樣，確認臉、細線、暗部與色彩。",
+      "做 100% 局部打樣，確認臉、邊緣、暗部與色彩。",
       "最後依印刷店規格處理 CMYK、PDF/X 或其他交付格式。",
     ],
   };
@@ -500,10 +594,9 @@ function statusForDpi(dpi, distance) {
   return { level: "red", label: "不足" };
 }
 
-function statusForSharpness(sharpness, hasText) {
-  const adjusted = sharpness - (hasText ? 2 : 0);
-  if (adjusted >= 10) return { level: "green", label: "清楚" };
-  if (adjusted >= 5) return { level: "yellow", label: "需檢查" };
+function statusForSharpness(sharpness) {
+  if (sharpness >= 10) return { level: "green", label: "清楚" };
+  if (sharpness >= 5) return { level: "yellow", label: "需檢查" };
   return { level: "red", label: "偏糊" };
 }
 
@@ -529,7 +622,7 @@ function renderAdvice(metrics) {
   const advice = [];
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
   const colorStatus = statusForColor(metrics.colorRisk);
-  const sharpStatus = statusForSharpness(metrics.sharpness, metrics.print.hasText);
+  const sharpStatus = statusForSharpness(metrics.sharpness);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
 
   if (dpiStatus.level === "red") {
@@ -541,7 +634,7 @@ function renderAdvice(metrics) {
   }
 
   if (sharpStatus.level !== "green") {
-    advice.push("畫面銳利度仍可改善，若含小字、細線或角色臉部，請局部放大檢查並視情況做輕度銳化。");
+    advice.push("畫面銳利度仍可改善，若含角色臉部、Logo 邊緣或重要細節，請局部放大檢查並視情況做輕度銳化。");
   }
 
   const noiseStatus = statusForNoise(metrics.noise);
@@ -563,12 +656,8 @@ function renderAdvice(metrics) {
     advice.push("出血數值已達常見標準，但目前只檢查你設定的出血值，仍需確認背景有延伸到出血外框。");
   }
 
-  if (metrics.print.hasText) {
-    advice.push("圖片內若有小字，最好在 Illustrator/Figma 重新排成向量文字。");
-  }
-
   if (metrics.print.isLogoAsset) {
-    advice.push("此圖已標記為 Logo / 圖示 / 徽章素材，可考慮使用 Inkscape Trace Bitmap 免費轉成 SVG；複雜角色圖或厚塗圖不建議硬轉向量。");
+    advice.push("此圖已標記為 Logo / 圖示 / 徽章素材；多數送印情境先用高解析 PNG/PDF 即可。只有超大輸出、長期重複使用、改色拆物件或店家要求時，再考慮向量化。");
   }
 
   if (metrics.print.needsEditableLayers) {
@@ -576,7 +665,7 @@ function renderAdvice(metrics) {
   }
 
   if (dpiStatus.level === "green" && colorStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
-    advice.push("所有主要指標皆為綠燈，建議下一步做 100% 局部打樣，確認暗部、細線與色彩後再正式送印。");
+    advice.push("所有主要指標皆為綠燈，建議下一步做 100% 局部打樣，確認暗部、邊緣與色彩後再正式送印。");
   }
 
   els.adviceList.innerHTML = advice.map((item) => `<li>${item}</li>`).join("");
@@ -635,6 +724,7 @@ function renderActiveFix(fixes) {
     els.fixStepTrustNote.textContent = "工具說明會顯示在這裡。";
     els.fixStepTrustNote.style.display = "block";
     els.fixStepList.innerHTML = "<li>先上傳一張 AI 圖。</li>";
+    renderExtraGuides([]);
     els.fixLink.textContent = "查看工具";
     els.fixLink.disabled = true;
     els.fixPrev.disabled = true;
@@ -646,9 +736,10 @@ function renderActiveFix(fixes) {
   els.fixStepLabel.textContent = `第 ${stepNumber} 步 / 共 ${fixes.length} 步`;
   els.fixStepTitle.textContent = fix.title;
   els.fixStepSummary.textContent = fix.summary;
-  els.fixStepTrustNote.textContent = fix.trustNote || "";
+  els.fixStepTrustNote.textContent = formatTrustNote(fix.trustNote, fix.versionHint);
   els.fixStepTrustNote.style.display = fix.trustNote ? "block" : "none";
   els.fixStepList.innerHTML = fix.steps.map((step) => `<li>${step}</li>`).join("");
+  renderExtraGuides(fix.extraGuides || []);
   els.fixLink.textContent = fix.url ? `查看：${fix.linkText}` : "目前不需工具";
   els.fixLink.disabled = !fix.url;
 
@@ -660,8 +751,34 @@ function renderActiveFix(fixes) {
   els.fixNext.disabled = !nextFix;
 }
 
+function formatTrustNote(note, versionHint = true) {
+  if (!note) return "";
+  if (!versionHint) return note;
+  return `${note} 不同版本或語言介面的選單名稱可能略有差異；如果找不到選項，可以截圖詢問 ChatGPT、Gemini，或對照官方文件確認。`;
+}
+
 function shortFixTitle(title) {
   return title.split("：")[0].trim();
+}
+
+function renderExtraGuides(guides) {
+  if (!guides.length) {
+    els.fixExtraGuides.innerHTML = "";
+    els.fixExtraGuides.hidden = true;
+    return;
+  }
+
+  els.fixExtraGuides.hidden = false;
+  els.fixExtraGuides.innerHTML = [
+    "<p>依你的圖片類型選一個深入設定：</p>",
+    '<div class="guide-chip-list">',
+    ...guides.map((guide, index) => `<button class="guide-chip" type="button" data-guide-index="${index}">${guide.label}</button>`),
+    "</div>",
+  ].join("");
+
+  els.fixExtraGuides.querySelectorAll(".guide-chip").forEach((button) => {
+    button.addEventListener("click", () => openGuideModal(guides[Number(button.dataset.guideIndex)], button));
+  });
 }
 
 function clamp(value, min, max) {
@@ -673,12 +790,108 @@ function openToolDialog() {
   if (!fix || !fix.url) return;
   els.dialogTitle.textContent = fix.title;
   els.dialogSummary.textContent = fix.summary;
-  els.dialogTrustNote.textContent = fix.trustNote;
+  els.dialogTrustNote.textContent = formatTrustNote(fix.trustNote, fix.versionHint);
   if (typeof els.toolDialog.showModal === "function") {
     els.toolDialog.showModal();
   } else {
     confirmOpenTool();
   }
+}
+
+function openVectorModal() {
+  els.vectorModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.vectorModalDone.focus();
+}
+
+function openVectorTutorialGuide(event) {
+  const trigger = event && event.currentTarget === els.openVectorTutorialFromModal ? els.openVectorTutorial : event?.currentTarget || els.openVectorTutorial;
+  if (!els.vectorModal.hidden) {
+    els.vectorModal.hidden = true;
+  }
+  openGuideModal(vectorTutorialGuide(), trigger);
+}
+
+function closeVectorModal() {
+  els.vectorModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  els.openVectorModal.focus();
+}
+
+function openGuideModal(guide, trigger) {
+  if (!guide) return;
+  state.guideTrigger = trigger || null;
+  els.guideModalEyebrow.textContent = guide.eyebrow || "Guide";
+  els.guideModalTitle.textContent = guide.title;
+  els.guideModalSummary.textContent = guide.summary || "";
+  const versionNote = guide.versionHint === false ? "" : '<p class="guide-version-note">不同版本或語言介面的選單名稱可能略有差異；如果找不到選項，可以截圖詢問 ChatGPT、Gemini，或對照官方文件確認。</p>';
+  els.guideModalContent.innerHTML = versionNote + guide.sections
+    .map((section) => {
+      const items = section.items.map((item) => `<li>${item}</li>`).join("");
+      return `<section><h3>${section.title}</h3><ul>${items}</ul></section>`;
+    })
+    .join("");
+  els.guideModal.hidden = false;
+  document.body.classList.add("modal-open");
+  els.guideModalDone.focus();
+}
+
+function closeGuideModal() {
+  els.guideModal.hidden = true;
+  document.body.classList.remove("modal-open");
+  if (state.guideTrigger) {
+    state.guideTrigger.focus();
+    state.guideTrigger = null;
+  }
+}
+
+function vectorTutorialGuide() {
+  return {
+    eyebrow: "Advanced SVG",
+    title: "我想轉向量：Inkscape SVG 教學",
+    summary: "這是進階教學，不會進入本工具評分。適合真的需要 SVG / PDF 向量交付、超大輸出、改色拆物件或長期重複使用的人。",
+    sections: [
+      {
+        title: "先判斷是否值得",
+        items: [
+          "適合：Logo、圖示、徽章、單色剪影、邊界清楚且色塊簡單的符號。",
+          "不適合：厚塗角色圖、照片、煙霧、光影、漸層很多或細碎材質很多的 AI 插畫。",
+          "如果只是一般海報、貼紙或帆布輸出，通常先用 Upscayl 放大成高解析 PNG/PDF 比轉向量更快。",
+          "如果轉完後邊緣變髒、尖角被磨圓、檔案很重，就回到高解析 PNG/PDF 路線，不要硬轉。",
+        ],
+      },
+      {
+        title: "下載與開啟圖片",
+        items: [
+          '到 <a href="https://inkscape.org/release/inkscape-1.4.4/" target="_blank" rel="noopener noreferrer">Inkscape 1.4.4 官方下載頁</a>。',
+          "Windows 使用者依序點 Windows > 64-bit > Windows Installer Package / msi。",
+          "MSI 是 Windows 安裝包格式，不是微星顯卡，照一般安裝流程下一步即可。",
+          "開啟 Inkscape 後可點「瀏覽其他檔案...」或用「檔案（File）> 開啟（Open）」匯入圖片。",
+          "看到匯入 JPEG/PNG 設定時，通常維持預設並按確定即可。",
+        ],
+      },
+      {
+        title: "描圖起始設定",
+        items: [
+          "選取圖片後，打開「路徑（Path）> 描摹點陣圖（Trace Bitmap）」。",
+          "黑白 Logo / 單色圖示：用「單次掃描（Single Scan）」與「亮度截斷（Brightness cutoff）」，臨界值先試 0.55。",
+          "彩色徽章 / 多色圖示：用「多次掃描（Multiple Scans）」與「顏色（Colors）」，掃描數先試 4 到 8 色。",
+          "背景是白底或棋盤底時，可嘗試「移除背景（Remove background）」；若效果不好，描完後再分離群組手動刪除。",
+          "預覽看起來乾淨再按「套用（Apply）」；如果預覽已經很髒，通常代表不適合硬轉。",
+        ],
+      },
+      {
+        title: "清理與輸出",
+        items: [
+          "套用後把向量圖拖開，確認下面是否還有原始 JPG、棋盤背景或浮水印。",
+          "如果背景和主圖包在一起，先用「物件（Object）> 解散群組（Ungroup）」再刪除多餘物件。",
+          "放大檢查尖角、細線、孔洞、顏色分區與浮水印殘留。",
+          "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF，或請店家代轉 AI/PDF。",
+          "轉完 SVG 不需要回本工具評分；請在 Inkscape / Illustrator 放大檢查，或交由印刷店確認交付格式與輸出規格。",
+        ],
+      },
+    ],
+  };
 }
 
 function confirmOpenTool() {
@@ -722,7 +935,7 @@ function buildShopMessage(metrics) {
     `你好，我想印 ${getUseLabel()}。`,
     `檔案像素為 ${metrics.pixelWidth} x ${metrics.pixelHeight} px，目標輸出尺寸為 ${metrics.print.widthMm} x ${metrics.print.heightMm} mm，目前依尺寸估算的有效 DPI 約 ${Math.round(metrics.dpi.effective)}。`,
     `目前設定出血 ${metrics.print.bleedMm} mm，但仍需確認背景是否有延伸到出血區。`,
-    metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材，也想確認是否適合轉成 SVG 向量檔。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
+    metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材；若直接輸出不夠乾淨，請協助判斷適合用高解析 PNG/PDF，或是否需要另外轉成貴店可印格式。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
     metrics.print.needsEditableLayers ? "我也想嘗試將圖片拆成可編輯圖層，方便後續調整文字、物件或版面。" : "目前沒有特別要求拆成可編輯圖層。",
     `CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，請協助轉檔或告知規格。`,
     "請問這樣適合送印嗎？如果需要調整解析度、出血、裁切或轉色，也請告訴我。",
@@ -814,44 +1027,52 @@ function chooseFixPlan(metrics) {
 
 function collectFixes(metrics) {
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
-  const sharpStatus = statusForSharpness(metrics.sharpness, metrics.print.hasText);
+  const sharpStatus = statusForSharpness(metrics.sharpness);
   const colorStatus = statusForColor(metrics.colorRisk);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
   const fixes = [];
 
   if (metrics.print.needsEditableLayers) fixes.push(canvaFix());
-  if (metrics.print.isLogoAsset) fixes.push(inkscapeFix());
   if (bleedStatus.level !== "green") fixes.push(bleedFix());
-  if (dpiStatus.level === "red" || (dpiStatus.level === "yellow" && !metrics.print.isLogoAsset)) fixes.push(upscaleFix(metrics));
+  if (dpiStatus.level === "red" || dpiStatus.level === "yellow") fixes.push(upscaleFix(metrics));
   if (sharpStatus.level === "red") fixes.push(sharpenFix());
   if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
   if (colorStatus.level !== "green") fixes.push(colorFix());
-  if (metrics.print.hasText) fixes.push(textFix());
 
   return fixes;
 }
 
 function upscaleFix(metrics) {
   const upscale = getUpscalePreset(metrics);
+  const isLogoAsset = metrics.print.isLogoAsset;
+  const title = "修解析度：下載 Upscayl 桌面版";
+  const summary = `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。${
+    isLogoAsset ? " 這是多數 Logo / 徽章送印情境最省事的主路線；向量化可留到需要超大輸出或改色拆物件時再做。" : ""
+  }`;
+  const trustNote = isLogoAsset
+    ? "多數 Logo / 圖示若只是海報、貼紙或招牌輸出，高解析 PNG/PDF 通常已經足夠。只有需要長期重複使用、任意改色、拆物件或店家明確要求向量檔時，才需要另外做向量化。Upscayl 是免費開源的 AI 圖片放大桌面軟體，適合先把低解析圖拉到可送印門檻。"
+    : "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。";
+  const steps = [
+    "打開 Upscayl 下載頁，下載 Windows 桌面版。",
+    "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
+    "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
+    "匯入原圖。",
+    `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
+    upscale.caution,
+    "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
+    "Output Format 選 PNG，避免用低品質 JPG。",
+    "輸出後請放大看臉、邊緣、線條和暗部，不要只看縮圖。",
+    "回到本工具，點重新上傳修正版檢查分數。",
+  ];
+
   return {
-    title: "修解析度：下載 Upscayl 桌面版",
-    summary: `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。`,
-    trustNote: "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。",
+    title,
+    summary,
+    trustNote,
     linkText: "下載免費桌面版",
     url: "https://upscayl.io/",
-    steps: [
-      "打開 Upscayl 下載頁，下載 Windows 桌面版。",
-      "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
-      "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
-      "匯入原圖。",
-      `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
-      upscale.caution,
-      "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
-      "Output Format 選 PNG，避免用低品質 JPG。",
-      "輸出後請放大看臉、文字、線條和暗部，不要只看縮圖。",
-      "回到本工具，點重新上傳修正版檢查分數。",
-    ],
+    steps,
   };
 }
 
@@ -915,26 +1136,121 @@ function inkscapeFix() {
     linkText: "前往 Inkscape 1.4.4 下載頁",
     url: "https://inkscape.org/release/inkscape-1.4.4/",
     steps: [
-      "打開 Inkscape 1.4.4 下載頁。",
-      "在第一層選擇 Windows。",
-      "在第二層選擇 64-bit；如果不確定，通常選 64-bit / x86_64。",
-      "在第三層選擇 Windows Installer Package / msi。這裡的 MSI 是 Microsoft Installer，不是微星，也跟顯卡無關。",
-      "MSI 是 Windows 常見安裝包格式，適合一般使用者；下載後照安裝精靈下一步即可。",
-      "不要選 Source Archive；7z 壓縮檔通常給進階使用者，不建議新手選。",
-      "下載完成後執行 .msi 安裝檔並完成安裝。",
-      "開啟 Inkscape 後，如果看到開始畫面，先切到「開始創作」，選「瀏覽其他檔案...」，再按「開啟」選圖片。",
-      "如果你已經進入空白畫布，就用「檔案（File）> 匯入（Import）」把圖片放進畫布；若跳出匯入選項，用預設值即可。",
+      "下載 Inkscape：選 Windows > 64-bit > Windows Installer Package / msi，安裝後開啟。",
+      "如果看到開始畫面，切到「開始創作」，選「瀏覽其他檔案...」開圖片。",
+      "如果已進入空白畫布，就用「檔案（File）> 匯入（Import）」把圖片放進畫布。",
       "先點一下圖片，確認圖片外框有選取框；如果沒選到，Trace Bitmap 可能不會作用。",
       "從上方選單選「路徑（Path）> 描摹點陣圖（Trace Bitmap）」。",
-      "黑白 Logo 或單色圖示：選「單次掃描（Single Scan）」，模式先用「亮度截斷（Brightness cutoff）」，「臨界值（Threshold）」可從 0.45 到 0.65 試。",
-      "彩色徽章或多色圖示：選「多重掃描（Multiple Scans）」或「顏色（Colors）」，「掃描數（Scans）」可先試 8、12 或 16；顏色越多檔案越重。",
-      "若有白底或透明背景，嘗試勾選「移除背景（Remove background）」；若邊緣太碎，可開「平滑（Smooth）」或「最佳化（Optimize）」類似選項。",
-      "按「更新預覽（Update Preview）」或「預覽（Preview）」先看結果；邊緣乾淨再按「套用（Apply）」。",
-      "按 Apply 後，向量結果會疊在原圖正上方，看起來可能像沒反應；請用滑鼠把上層物件拖到旁邊檢查。",
-      "如果拖開後看到兩張圖，代表成功：一張是原始點陣圖，一張是描出的向量圖。",
-      "確認向量結果 OK 後，刪掉原本的點陣圖，只保留向量。",
-      "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF。",
-      "若結果變髒或檔案很重，代表這張圖不適合硬轉向量，請改用高解析 PNG/PDF。",
+      "依圖片類型點下方深入設定：黑白 Logo、彩色徽章，或結果檢查。",
+      "按「預覽（Preview）」先看結果；邊緣乾淨再按「套用（Apply）」。",
+        "套用後把上層物件拖到旁邊檢查，確認哪個是原圖、哪個是向量結果。",
+        "如果棋盤背景或浮水印也被描出來，可先分離/解散群組（Ungroup），再選取多餘背景物件刪除。",
+        "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF。",
+        "如果向量結果很髒、檔案很重或和原圖差很多，改用高解析 PNG/PDF，不要硬轉。",
+    ],
+    extraGuides: [
+      {
+        label: "黑白 Logo / 單色圖示",
+        eyebrow: "Trace Bitmap",
+        title: "黑白 Logo 或單色圖示怎麼設？",
+        summary: "適合黑白商標、剪影、單色符號、邊界清楚的圖示。目標是取得乾淨外框，不追求保留原圖所有細節。",
+        sections: [
+          {
+            title: "建議設定",
+            items: [
+              "在「描摹點陣圖（Trace Bitmap）」裡選「單次掃描（Single Scan）」。",
+              "模式先用「亮度截斷（Brightness cutoff）」。",
+              "「臨界值（Threshold）」先從 0.55 試；太瘦就提高到 0.60～0.65，太粗或黑成一片就降到 0.45～0.50。",
+              "背景是白底時可勾「移除背景（Remove background）」，但不是必須；描完後也可以分離/解散群組再刪背景物件。",
+              "邊緣鋸齒太明顯時，開「平滑（Smooth）」；節點太多時，再試「最佳化（Optimize）」。",
+            ],
+          },
+          {
+            title: "怎麼判斷成功",
+            items: [
+              "預覽看起來像一個乾淨剪影，邊緣沒有大量碎屑。",
+              "小洞、尖角或細線沒有被吃掉。",
+              "套用後拖開檢查，刪掉原圖只保留向量也能看懂圖案。",
+            ],
+          },
+          {
+            title: "不成功時",
+            items: [
+              "如果 Logo 原圖太糊，先換更清楚的來源圖，不要先放大再硬描。",
+              "如果邊緣髒點很多，先在 Photopea 清白底或去噪，再回 Inkscape 描摹。",
+              "如果只有背景被一起描出來，先試分離/解散群組後刪背景，不一定要重新描。",
+              "如果有大量漸層、陰影或材質，這張圖可能不適合單色向量化。",
+            ],
+          },
+        ],
+      },
+      {
+        label: "彩色徽章 / 多色圖示",
+        eyebrow: "Trace Bitmap",
+        title: "彩色徽章或多色圖示怎麼設？",
+        summary: "適合色塊清楚、顏色不多的徽章、遊戲圖示、UI icon。重點是先減少顏色，避免 SVG 變成一堆碎色塊。",
+        sections: [
+          {
+            title: "建議設定",
+            items: [
+              "選「多重掃描（Multiple Scans）」或「顏色（Colors）」模式。",
+              "「掃描數（Scans）」先試 8；顏色不夠再試 12 或 16。",
+              "不要一開始就開太多顏色，顏色越多，檔案越重，也越難整理。",
+              "如果有白底、棋盤格或透明底，可試「移除背景（Remove background）」，但也可以套用後分離/解散群組再刪背景色塊。",
+              "邊緣太破碎時，試著開「平滑（Smooth）」或「最佳化（Optimize）」。",
+            ],
+          },
+          {
+            title: "怎麼判斷成功",
+            items: [
+              "主要形狀清楚，顏色分區看起來像設計稿，而不是碎玻璃感。",
+              "放大看邊緣不髒，色塊沒有太多不必要的小碎片。",
+              "檔案仍能流暢移動與儲存；如果卡頓明顯，通常代表節點太多。",
+            ],
+          },
+          {
+            title: "不成功時",
+            items: [
+              "把掃描數降低，先保留主色塊，不要追求完全像原圖。",
+              "如果棋盤格背景被描進去，先分離/解散群組，再選取背景方塊或浮水印色塊刪除。",
+              "如果徽章有厚重金屬材質、光暈或煙霧，改輸出高解析 PNG/PDF 會比較自然。",
+              "如果印刷店只是需要可印檔，不一定需要 SVG；可以附檢查報告請店家代轉 PDF。",
+            ],
+          },
+        ],
+      },
+      {
+        label: "結果檢查 / 是否還要放大",
+        eyebrow: "Vector Check",
+        title: "向量化後怎麼判斷是否還要修解析度？",
+        summary: "成功向量化後，Logo 或圖示本身通常不再看 DPI；但混合點陣素材時，還是要檢查那些點陣部分。",
+        sections: [
+          {
+            title: "向量化成功時",
+            items: [
+              "把向量結果拖開後，刪掉原始點陣圖，只留向量仍然清楚。",
+              "存成 SVG 或 PDF 後重新打開，邊緣仍然乾淨。",
+              "這種純向量 Logo / 圖示本身通常不需要再用 Upscayl 放大。",
+            ],
+          },
+          {
+            title: "仍需要檢查 DPI 的情況",
+            items: [
+              "設計裡還有點陣背景、角色、照片、材質、陰影或 AI 厚塗圖。",
+              "你最後不是交 SVG/PDF，而是輸出 PNG 或 JPG。",
+              "向量化結果失敗，最後改用高解析 PNG/PDF。",
+            ],
+          },
+          {
+            title: "送印前最後確認",
+            items: [
+              "把純向量圖另存 SVG；若要給印刷店，可另存 PDF。",
+              "如果包含點陣圖，回本工具重新上傳輸出檔，確認有效 DPI。",
+              "大量印刷前仍建議先做小樣或局部 100% 打樣。",
+            ],
+          },
+        ],
+      },
     ],
   };
 }
@@ -1014,7 +1330,7 @@ function downloadReport() {
   if (!state.metrics) return;
   const m = state.metrics;
   const dpiStatus = statusForDpi(m.dpi.effective, m.print.distance);
-  const sharpStatus = statusForSharpness(m.sharpness, m.print.hasText);
+  const sharpStatus = statusForSharpness(m.sharpness);
   const noiseStatus = statusForNoise(m.noise);
   const colorStatus = statusForColor(m.colorRisk);
   const bleedStatus = statusForBleed(m.print.bleedMm);
@@ -1029,7 +1345,6 @@ function downloadReport() {
     `用途：${getUseLabel()}`,
     `輸出尺寸：${m.print.widthMm} x ${m.print.heightMm} mm`,
     `出血設定：${m.print.bleedMm} mm（${bleedStatus.label}；此工具只檢查設定值，仍需確認圖面背景是否延伸到出血區）`,
-    `圖片內含小字或細線：${m.print.hasText ? "是" : "否"}`,
     `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
     "",
     "二、檔案資訊",
@@ -1050,7 +1365,7 @@ function downloadReport() {
     "1. 我不是設計專業，想請貴店協助確認此檔案能否以目標尺寸輸出。",
     "2. 若需要轉成貴店可印的格式，請協助代為轉檔並告知是否需要加收處理費。",
     "3. 若解析度、出血、裁切、安全邊界或背景延伸不足，請直接告知需要補哪裡。",
-    "4. 若畫面包含小字、細線、Logo 或徽章，請協助確認是否需要重排、轉向量或改用其他檔案。",
+    "4. 若畫面中的 Logo、徽章、邊緣或重要細節不適合直接輸出，請協助判斷是否要改用 PDF、AI、TIFF、PNG 或其他交付格式。",
     "5. 若正式大量印刷，請建議是否需要先做局部或小張打樣確認暗部、細節與色彩。",
     "",
     "備註",

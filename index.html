@@ -17,7 +17,7 @@
           </div>
           <div class="hero-notes">
             <p><strong>印刷邊界</strong> 本工具提供風險檢查與修復方向，不保證實際印刷結果；正式輸出仍需依印刷店規格、紙材、ICC Profile、CMYK 轉換與打樣結果確認。</p>
-            <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、降噪、補出血或重排小字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
+            <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、降噪、補出血或重排文字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
           </div>
         </section>
 
@@ -28,7 +28,7 @@
               <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
               <div>
                 <strong>選擇圖片</strong>
-                <span>PNG、JPG、WebP。可拖放到這裡。</span>
+                <span>PNG、JPG、WebP。SVG / PDF / AI 請用向量軟體或交由店家檢查。</span>
               </div>
               <div class="side-upload-actions">
                 <button class="primary-button" type="button" id="pickFile">選擇圖片</button>
@@ -74,14 +74,19 @@
             </label>
 
             <div class="switch-row">
-              <input id="hasText" type="checkbox" />
-              <label for="hasText">圖片內含小字或細線</label>
-            </div>
-
-            <div class="switch-row">
               <input id="isLogoAsset" type="checkbox" />
               <label for="isLogoAsset">Logo / 圖示 / 徽章素材</label>
             </div>
+
+            <button class="inline-help-button" id="openVectorModal" type="button">
+              <span>什麼是向量化？</span>
+              <small>判斷是否需要轉 SVG / PDF</small>
+            </button>
+
+            <button class="inline-help-button secondary-help" id="openVectorTutorial" type="button">
+              <span>我想轉向量 / SVG 教學</span>
+              <small>進階：Inkscape Trace Bitmap</small>
+            </button>
 
             <div class="switch-row">
               <input id="needsEditableLayers" type="checkbox" />
@@ -173,12 +178,12 @@
                 <summary>
                   <span>
                     <strong>處理原則</strong>
-                    <small>先分層、向量化或放大的判斷</small>
+                    <small>分層、放大或是否向量化的判斷</small>
                   </span>
                   <em data-open="收合內容">展開內容</em>
                 </summary>
                 <div class="details-body">
-                  <p id="workflowSummary">上傳圖片後，這裡會依用途建議先分層、先向量化，或先放大。</p>
+                  <p id="workflowSummary">上傳圖片後，這裡會依用途建議先分層、先放大，或判斷是否需要向量化。</p>
                   <ol id="workflowSteps">
                     <li>先上傳一張 AI 圖。</li>
                   </ol>
@@ -212,6 +217,7 @@
                 <ol id="fixStepList">
                   <li>先上傳一張 AI 圖。</li>
                 </ol>
+                <div class="fix-extra-guides" id="fixExtraGuides"></div>
                 <div class="step-nav">
                   <button id="fixPrev" class="ghost-button" type="button" disabled>上一步</button>
                   <button id="fixNext" class="ghost-button" type="button" disabled>下一步</button>
@@ -297,6 +303,54 @@
         </section>
       </section>
     </main>
+
+    <div class="custom-modal-overlay" id="vectorModal" role="dialog" aria-modal="true" aria-labelledby="vectorModalTitle" hidden>
+      <section class="custom-modal vector-modal" role="document">
+        <button class="modal-close-button" id="closeVectorModal" type="button" aria-label="關閉向量化說明">×</button>
+        <p class="eyebrow">Vector Guide</p>
+        <h2 id="vectorModalTitle">什麼是向量化？</h2>
+        <p class="modal-lead">向量化是把 PNG / JPG 這種由像素組成的點陣圖，改描成線條、節點與色塊。成功後的 Logo、圖示或徽章可以放很大，邊緣也不會因為像素不足而糊掉。但它是進階選項，不是送印必做；多數情況先提升解析度再輸出高解析 PNG / PDF 會更快。</p>
+        <div class="vector-decision-grid">
+          <section>
+            <h3>適合考慮向量化</h3>
+            <ul>
+              <li>邊界清楚、背景乾淨。</li>
+              <li>色塊簡單，約 8 到 16 色內。</li>
+              <li>Logo、圖示、徽章、剪影或扁平符號。</li>
+            </ul>
+          </section>
+          <section>
+            <h3>不適合硬轉</h3>
+            <ul>
+              <li>角色厚塗、照片、煙霧、光影很多。</li>
+              <li>細碎漸層或材質會變成大量色塊。</li>
+              <li>轉出來很髒或檔案很重時，改用高解析 PNG / PDF。</li>
+            </ul>
+          </section>
+        </div>
+        <div class="vector-modal-note">
+          <strong>向量化後還需要修解析度嗎？</strong>
+          <p>如果已成功轉成乾淨的純向量 SVG / PDF，該圖示本身通常不需要再修 DPI。若作品裡還有點陣背景、照片、材質，或最後仍要用 PNG 輸出，仍要回本工具檢查解析度。</p>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="openVectorTutorialFromModal" type="button">我想轉向量</button>
+          <button class="primary-button" id="vectorModalDone" type="button">我知道了</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="custom-modal-overlay" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideModalTitle" hidden>
+      <section class="custom-modal guide-modal" role="document">
+        <button class="modal-close-button" id="closeGuideModal" type="button" aria-label="關閉教學說明">×</button>
+        <p class="eyebrow" id="guideModalEyebrow">Guide</p>
+        <h2 id="guideModalTitle">教學說明</h2>
+        <p class="modal-lead" id="guideModalSummary"></p>
+        <div class="guide-modal-content" id="guideModalContent"></div>
+        <div class="modal-actions">
+          <button class="primary-button" id="guideModalDone" type="button">我知道了</button>
+        </div>
+      </section>
+    </div>
 
     <dialog id="toolDialog" class="tool-dialog">
       <form method="dialog">
