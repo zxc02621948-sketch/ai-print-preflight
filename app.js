@@ -1013,46 +1013,48 @@ function proofFix() {
 function downloadReport() {
   if (!state.metrics) return;
   const m = state.metrics;
-  const workflow = chooseWorkflow(m);
-  const fixPlan = chooseFixPlan(m);
-  const fixes = fixPlan.fixes || [fixPlan.primaryFix || proofFix()];
+  const dpiStatus = statusForDpi(m.dpi.effective, m.print.distance);
+  const sharpStatus = statusForSharpness(m.sharpness, m.print.hasText);
+  const noiseStatus = statusForNoise(m.noise);
+  const colorStatus = statusForColor(m.colorRisk);
+  const bleedStatus = statusForBleed(m.print.bleedMm);
+  const scoreLabel = m.scores.total >= 85 ? "綠燈：可送印前處理" : m.scores.total >= 70 ? "黃燈：建議修正後送印" : "紅燈：不建議直接送印";
+  const target = targets[m.print.distance];
   const lines = [
-    "AI 圖印刷前檢查與修復報告",
+    "AI 圖送印前檢查摘要",
+    `產生日期：${new Date().toLocaleDateString("zh-TW")}`,
+    "",
+    "一、送印需求",
     `檔名：${m.fileName}`,
-    `圖片像素：${m.pixelWidth} x ${m.pixelHeight} px`,
+    `用途：${getUseLabel()}`,
     `輸出尺寸：${m.print.widthMm} x ${m.print.heightMm} mm`,
-    `有效 DPI：${Math.round(m.dpi.effective)}`,
-    `總分：${m.scores.total}`,
-    `出血：${m.print.bleedMm} mm`,
-    `含小字/細線：${m.print.hasText ? "是" : "否"}`,
+    `出血設定：${m.print.bleedMm} mm（${bleedStatus.label}；此工具只檢查設定值，仍需確認圖面背景是否延伸到出血區）`,
+    `圖片內含小字或細線：${m.print.hasText ? "是" : "否"}`,
     `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
-    `需要拆成可編輯圖層：${m.print.needsEditableLayers ? "是" : "否"}`,
-    `銳利度估計：${m.sharpness.toFixed(2)}`,
-    `高風險 RGB 色彩比例：${Math.round(m.colorRisk.riskyRatio * 100)}%`,
-    `300 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
-    `150 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
-    `72 DPI 可印：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
     "",
-    "處理順序建議：",
-    workflow.summary,
-    ...workflow.steps.map((step, index) => `${index + 1}. ${step}`),
+    "二、檔案資訊",
+    `圖片像素：${m.pixelWidth} x ${m.pixelHeight} px`,
+    `有效 DPI（依輸出尺寸估算）：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}；此用途建議約 ${target.yellow}-${target.green} DPI 以上）`,
+    `300 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
+    `150 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
+    `72 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
     "",
-    "建議修復順序：",
-    fixPlan.summary,
-    ...fixPlan.steps.map((step, index) => `${index + 1}. ${step}`),
+    "三、初步風險估算",
+    `整體評估：${scoreLabel}（${m.scores.total} 分）`,
+    `解析度：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}）`,
+    `銳利度：${m.sharpness.toFixed(1)}（${sharpStatus.label}）`,
+    `壓縮 / 噪點：${Math.round(m.noise.speckleRatio * 100)}%（${noiseStatus.label}）`,
+    `CMYK 色偏風險估算：${Math.round(m.colorRisk.riskyRatio * 100)}%（${colorStatus.label}）`,
     "",
-    "分步工具教學：",
-    ...fixes.flatMap((fix, fixIndex) => [
-      "",
-      `第 ${fixIndex + 1} 步：${fix.title}`,
-      `摘要：${fix.summary}`,
-      fix.trustNote ? `工具說明：${fix.trustNote}` : "",
-      fix.url ? `工具連結：${fix.url}` : "",
-      ...fix.steps.map((step, stepIndex) => `${stepIndex + 1}. ${step}`),
-    ]).filter(Boolean),
+    "四、請印刷店協助確認",
+    "1. 請確認此檔案以目標尺寸輸出是否足夠，是否需要調整輸出尺寸或重新提供更高解析檔案。",
+    "2. 請確認裁切、安全邊界與出血是否符合貴店規格；若背景未延伸到出血區，請協助告知。",
+    "3. 請依貴店流程處理 CMYK、ICC Profile、總墨量、PDF/X 或其他正式輸出格式。",
+    "4. 若畫面包含小字、細線、Logo 或徽章，請協助確認是否需要重新排字、轉向量或改用向量檔。",
+    "5. 若正式大量印刷，建議先做局部或小張打樣確認暗部、細節與色彩。",
     "",
-    "給印刷店備註：",
-    "此檔案為 AI 生成圖片的印刷前數位評估，不保證實際印刷結果。正式 CMYK 轉換請依店內 ICC Profile、紙材、總墨量與 PDF/X 規格處理。",
+    "備註",
+    "此報告為客戶端初步數位檢查摘要，不保證實際印刷結果；正式輸出仍以印刷店規格、紙材、機台、ICC Profile、CMYK 轉換與打樣結果為準。",
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
