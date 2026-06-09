@@ -9,32 +9,33 @@
   <body>
     <main class="app">
       <section class="workspace">
-        <header class="topbar">
-          <div>
+        <section class="hero-panel">
+          <div class="hero-copy">
             <p class="eyebrow">AI Print Preflight Guide</p>
             <h1>AI 圖印刷前檢查與修復指南</h1>
+            <p>先選圖片與輸出用途，評估海報、名片、帆布輸出風險，再依分步教學修復。</p>
           </div>
-        </header>
-
-        <section class="notice">
-          本工具提供印刷前風險檢查與修復方向，不保證實際印刷結果。正式輸出仍需依印刷店規格、紙材、ICC Profile、CMYK 轉換與打樣結果確認。
-        </section>
-
-        <section class="upload-panel" id="dropZone">
-          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
-          <div class="upload-copy">
-            <strong>上傳 AI 圖</strong>
-            <span>PNG、JPG、WebP。先評估海報/名片/帆布輸出風險。</span>
-          </div>
-          <div class="upload-actions">
-            <button class="ghost-button" type="button" id="loadSample">載入測試樣張</button>
-            <button class="primary-button" type="button" id="pickFile">選擇圖片</button>
+          <div class="hero-notes">
+            <p><strong>印刷邊界</strong> 本工具提供風險檢查與修復方向，不保證實際印刷結果；正式輸出仍需依印刷店規格、紙材、ICC Profile、CMYK 轉換與打樣結果確認。</p>
+            <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、降噪、補出血或重排小字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
           </div>
         </section>
 
         <section class="content-grid">
           <aside class="settings">
-            <h2>輸出設定</h2>
+            <h2>圖片與輸出設定</h2>
+            <div class="side-upload" id="dropZone">
+              <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
+              <div>
+                <strong>選擇圖片</strong>
+                <span>PNG、JPG、WebP。可拖放到這裡。</span>
+              </div>
+              <div class="side-upload-actions">
+                <button class="primary-button" type="button" id="pickFile">選擇圖片</button>
+                <button class="ghost-button" type="button" id="loadSample">載入測試樣張</button>
+              </div>
+            </div>
+
             <label>
               用途尺寸
               <select id="preset">
@@ -122,14 +123,32 @@
                   <h2 id="fixTitle">等待評估</h2>
                 </div>
                 <div class="fix-actions">
-                  <button id="fixLink" class="primary-button" type="button" disabled>查看第一步工具</button>
                   <button id="reuploadFixed" class="ghost-button" type="button" disabled>重新上傳修正版</button>
                 </div>
               </div>
               <p id="fixSummary">上傳圖片後，這裡會依處理順序列出建議修復步驟。</p>
-              <ol id="fixSteps">
+              <ol class="fix-overview" id="fixSteps">
                 <li>先上傳一張 AI 圖。</li>
               </ol>
+              <div class="fix-tabs" id="fixTabs" role="tablist" aria-label="修復步驟分頁"></div>
+              <article class="fix-detail">
+                <div class="fix-detail-heading">
+                  <div>
+                    <p class="eyebrow" id="fixStepLabel">Step 1</p>
+                    <h3 id="fixStepTitle">等待評估</h3>
+                  </div>
+                  <button id="fixLink" class="primary-button" type="button" disabled>查看工具</button>
+                </div>
+                <p id="fixStepSummary">上傳圖片後會顯示單一步驟的完整教學。</p>
+                <div class="trust-note" id="fixStepTrustNote">工具說明會顯示在這裡。</div>
+                <ol id="fixStepList">
+                  <li>先上傳一張 AI 圖。</li>
+                </ol>
+                <div class="step-nav">
+                  <button id="fixPrev" class="ghost-button" type="button" disabled>上一步</button>
+                  <button id="fixNext" class="ghost-button" type="button" disabled>下一步</button>
+                </div>
+              </article>
             </div>
           </section>
 
@@ -147,6 +166,7 @@
               <div class="report-actions">
                 <button id="copyShopMessage" class="ghost-button" type="button" disabled>複製送印詢問文字</button>
                 <button id="downloadReport" class="primary-button" type="button" disabled>下載給店家看的報告</button>
+                <a class="ghost-button jump-fix" href="#fixCard">查看修復教學</a>
               </div>
             </div>
 

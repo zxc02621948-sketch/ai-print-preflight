@@ -17,6 +17,9 @@ const state = {
   image: null,
   bitmap: null,
   metrics: null,
+  fixPlan: null,
+  fixPlanSignature: "",
+  activeFixIndex: 0,
   currentFix: null,
 };
 
@@ -64,7 +67,15 @@ const els = {
   fixTitle: document.querySelector("#fixTitle"),
   fixSummary: document.querySelector("#fixSummary"),
   fixSteps: document.querySelector("#fixSteps"),
+  fixTabs: document.querySelector("#fixTabs"),
+  fixStepLabel: document.querySelector("#fixStepLabel"),
+  fixStepTitle: document.querySelector("#fixStepTitle"),
+  fixStepSummary: document.querySelector("#fixStepSummary"),
+  fixStepTrustNote: document.querySelector("#fixStepTrustNote"),
+  fixStepList: document.querySelector("#fixStepList"),
   fixLink: document.querySelector("#fixLink"),
+  fixPrev: document.querySelector("#fixPrev"),
+  fixNext: document.querySelector("#fixNext"),
   reuploadFixed: document.querySelector("#reuploadFixed"),
   toolDialog: document.querySelector("#toolDialog"),
   dialogTitle: document.querySelector("#dialogTitle"),
@@ -79,6 +90,8 @@ els.pickFile.addEventListener("click", () => els.fileInput.click());
 els.loadSample.addEventListener("click", loadSampleImage);
 els.reuploadFixed.addEventListener("click", () => els.fileInput.click());
 els.fixLink.addEventListener("click", openToolDialog);
+els.fixPrev.addEventListener("click", () => setActiveFix(state.activeFixIndex - 1));
+els.fixNext.addEventListener("click", () => setActiveFix(state.activeFixIndex + 1));
 els.confirmOpenTool.addEventListener("click", confirmOpenTool);
 els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
 els.analyzeButton.addEventListener("click", analyze);
@@ -571,12 +584,88 @@ function renderAdvice(metrics) {
 
 function renderFixRecommendation(metrics) {
   const plan = chooseFixPlan(metrics);
-  state.currentFix = plan.primaryFix;
+  const fixes = plan.fixes || [];
+  const signature = fixes.map((fix) => fix.title).join("|");
+  const planChanged = signature !== state.fixPlanSignature;
+
+  state.fixPlan = plan;
+  state.fixPlanSignature = signature;
   els.fixTitle.textContent = plan.title;
   els.fixSummary.textContent = plan.summary;
   els.fixSteps.innerHTML = plan.steps.map((step) => `<li>${step}</li>`).join("");
-  els.fixLink.textContent = plan.primaryFix ? `查看：${plan.primaryFix.linkText}` : "目前不需工具";
-  els.fixLink.disabled = !plan.primaryFix || !plan.primaryFix.url;
+
+  const nextIndex = planChanged ? 0 : state.activeFixIndex;
+  setActiveFix(nextIndex);
+}
+
+function setActiveFix(index) {
+  if (!state.fixPlan) return;
+  const fixes = state.fixPlan.fixes || [];
+  state.activeFixIndex = clamp(index, 0, Math.max(fixes.length - 1, 0));
+  renderFixTabs(fixes);
+  renderActiveFix(fixes);
+}
+
+function renderFixTabs(fixes) {
+  if (!fixes.length) {
+    els.fixTabs.innerHTML = "";
+    return;
+  }
+
+  els.fixTabs.innerHTML = fixes
+    .map((fix, index) => {
+      const selected = index === state.activeFixIndex ? "true" : "false";
+      return `<button class="fix-tab" type="button" role="tab" aria-selected="${selected}" data-fix-index="${index}">第 ${index + 1} 步：${shortFixTitle(fix.title)}</button>`;
+    })
+    .join("");
+
+  els.fixTabs.querySelectorAll(".fix-tab").forEach((button) => {
+    button.addEventListener("click", () => setActiveFix(Number(button.dataset.fixIndex)));
+  });
+}
+
+function renderActiveFix(fixes) {
+  const fix = fixes[state.activeFixIndex] || null;
+  state.currentFix = fix;
+
+  if (!fix) {
+    els.fixStepLabel.textContent = "Step 1";
+    els.fixStepTitle.textContent = "等待評估";
+    els.fixStepSummary.textContent = "上傳圖片後會顯示單一步驟的完整教學。";
+    els.fixStepTrustNote.textContent = "工具說明會顯示在這裡。";
+    els.fixStepTrustNote.style.display = "block";
+    els.fixStepList.innerHTML = "<li>先上傳一張 AI 圖。</li>";
+    els.fixLink.textContent = "查看工具";
+    els.fixLink.disabled = true;
+    els.fixPrev.disabled = true;
+    els.fixNext.disabled = true;
+    return;
+  }
+
+  const stepNumber = state.activeFixIndex + 1;
+  els.fixStepLabel.textContent = `第 ${stepNumber} 步 / 共 ${fixes.length} 步`;
+  els.fixStepTitle.textContent = fix.title;
+  els.fixStepSummary.textContent = fix.summary;
+  els.fixStepTrustNote.textContent = fix.trustNote || "";
+  els.fixStepTrustNote.style.display = fix.trustNote ? "block" : "none";
+  els.fixStepList.innerHTML = fix.steps.map((step) => `<li>${step}</li>`).join("");
+  els.fixLink.textContent = fix.url ? `查看：${fix.linkText}` : "目前不需工具";
+  els.fixLink.disabled = !fix.url;
+
+  const previousFix = fixes[state.activeFixIndex - 1];
+  const nextFix = fixes[state.activeFixIndex + 1];
+  els.fixPrev.textContent = previousFix ? `上一步：${shortFixTitle(previousFix.title)}` : "上一步";
+  els.fixNext.textContent = nextFix ? `下一步：${shortFixTitle(nextFix.title)}` : "下一步";
+  els.fixPrev.disabled = !previousFix;
+  els.fixNext.disabled = !nextFix;
+}
+
+function shortFixTitle(title) {
+  return title.split("：")[0].trim();
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function openToolDialog() {
@@ -708,7 +797,8 @@ function chooseFixPlan(metrics) {
     return {
       title: "目前可進入打樣",
       summary: "主要風險都已低於警戒線，下一步建議做 100% 局部打樣，而不是再套更多修復。",
-      steps: proof.steps,
+      steps: [`${proof.title}：${proof.summary}`],
+      fixes: [proof],
       primaryFix: proof,
     };
   }
@@ -717,6 +807,7 @@ function chooseFixPlan(metrics) {
     title: "建議修復順序",
     summary: "以下依建議處理順序排列。先做會改版面或結構的步驟，再做放大與細節修正。",
     steps: fixes.map((fix) => `${fix.title}：${fix.summary}`),
+    fixes,
     primaryFix,
   };
 }
@@ -831,17 +922,18 @@ function inkscapeFix() {
       "MSI 是 Windows 常見安裝包格式，適合一般使用者；下載後照安裝精靈下一步即可。",
       "不要選 Source Archive；7z 壓縮檔通常給進階使用者，不建議新手選。",
       "下載完成後執行 .msi 安裝檔並完成安裝。",
-      "開啟 Inkscape 後，用 File > Import 匯入圖片；若跳出匯入選項，用預設值即可。",
+      "開啟 Inkscape 後，如果看到開始畫面，先切到「開始創作」，選「瀏覽其他檔案...」，再按「開啟」選圖片。",
+      "如果你已經進入空白畫布，就用「檔案（File）> 匯入（Import）」把圖片放進畫布；若跳出匯入選項，用預設值即可。",
       "先點一下圖片，確認圖片外框有選取框；如果沒選到，Trace Bitmap 可能不會作用。",
-      "從上方選單選 Path > Trace Bitmap。中文介面通常在「路徑」選單裡。",
-      "黑白 Logo 或單色圖示：選 Single Scan，模式先用 Brightness cutoff，Threshold 可從 0.45 到 0.65 試。",
-      "彩色徽章或多色圖示：選 Multiple Scans / Colors，Scans 可先試 8、12 或 16；顏色越多檔案越重。",
-      "若有白底或透明背景，嘗試勾選 Remove background；若邊緣太碎，可開 Smooth / Optimize 類似選項。",
-      "按 Update Preview 或 Preview 先看預覽；邊緣乾淨再按 Apply。",
+      "從上方選單選「路徑（Path）> 描摹點陣圖（Trace Bitmap）」。",
+      "黑白 Logo 或單色圖示：選「單次掃描（Single Scan）」，模式先用「亮度截斷（Brightness cutoff）」，「臨界值（Threshold）」可從 0.45 到 0.65 試。",
+      "彩色徽章或多色圖示：選「多重掃描（Multiple Scans）」或「顏色（Colors）」，「掃描數（Scans）」可先試 8、12 或 16；顏色越多檔案越重。",
+      "若有白底或透明背景，嘗試勾選「移除背景（Remove background）」；若邊緣太碎，可開「平滑（Smooth）」或「最佳化（Optimize）」類似選項。",
+      "按「更新預覽（Update Preview）」或「預覽（Preview）」先看結果；邊緣乾淨再按「套用（Apply）」。",
       "按 Apply 後，向量結果會疊在原圖正上方，看起來可能像沒反應；請用滑鼠把上層物件拖到旁邊檢查。",
       "如果拖開後看到兩張圖，代表成功：一張是原始點陣圖，一張是描出的向量圖。",
       "確認向量結果 OK 後，刪掉原本的點陣圖，只保留向量。",
-      "用 File > Save As 存成 SVG；若要交給印刷店，可另存 PDF。",
+      "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF。",
       "若結果變髒或檔案很重，代表這張圖不適合硬轉向量，請改用高解析 PNG/PDF。",
     ],
   };
@@ -923,7 +1015,7 @@ function downloadReport() {
   const m = state.metrics;
   const workflow = chooseWorkflow(m);
   const fixPlan = chooseFixPlan(m);
-  const fix = fixPlan.primaryFix || proofFix();
+  const fixes = fixPlan.fixes || [fixPlan.primaryFix || proofFix()];
   const lines = [
     "AI 圖印刷前檢查與修復報告",
     `檔名：${m.fileName}`,
@@ -949,11 +1041,15 @@ function downloadReport() {
     fixPlan.summary,
     ...fixPlan.steps.map((step, index) => `${index + 1}. ${step}`),
     "",
-    `第一步工具：${fix.title}`,
-    `工具說明：${fix.trustNote}`,
-    "",
-    "第一步操作：",
-    ...fix.steps.map((step, index) => `${index + 1}. ${step}`),
+    "分步工具教學：",
+    ...fixes.flatMap((fix, fixIndex) => [
+      "",
+      `第 ${fixIndex + 1} 步：${fix.title}`,
+      `摘要：${fix.summary}`,
+      fix.trustNote ? `工具說明：${fix.trustNote}` : "",
+      fix.url ? `工具連結：${fix.url}` : "",
+      ...fix.steps.map((step, stepIndex) => `${stepIndex + 1}. ${step}`),
+    ]).filter(Boolean),
     "",
     "給印刷店備註：",
     "此檔案為 AI 生成圖片的印刷前數位評估，不保證實際印刷結果。正式 CMYK 轉換請依店內 ICC Profile、紙材、總墨量與 PDF/X 規格處理。",
@@ -978,8 +1074,4 @@ function dateStamp() {
   const mm = String(now.getMonth() + 1).padStart(2, "0");
   const dd = String(now.getDate()).padStart(2, "0");
   return `${yyyy}${mm}${dd}`;
-}
-  
-  function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
 }
