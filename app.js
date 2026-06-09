@@ -570,13 +570,13 @@ function renderAdvice(metrics) {
 }
 
 function renderFixRecommendation(metrics) {
-  const fix = chooseFix(metrics);
-  state.currentFix = fix;
-  els.fixTitle.textContent = fix.title;
-  els.fixSummary.textContent = fix.summary;
-  els.fixSteps.innerHTML = fix.steps.map((step) => `<li>${step}</li>`).join("");
-  els.fixLink.textContent = fix.linkText;
-  els.fixLink.disabled = !fix.url;
+  const plan = chooseFixPlan(metrics);
+  state.currentFix = plan.primaryFix;
+  els.fixTitle.textContent = plan.title;
+  els.fixSummary.textContent = plan.summary;
+  els.fixSteps.innerHTML = plan.steps.map((step) => `<li>${step}</li>`).join("");
+  els.fixLink.textContent = plan.primaryFix ? `查看：${plan.primaryFix.linkText}` : "目前不需工具";
+  els.fixLink.disabled = !plan.primaryFix || !plan.primaryFix.url;
 }
 
 function openToolDialog() {
@@ -698,164 +698,200 @@ function getUpscalePreset(metrics) {
   };
 }
 
-function chooseFix(metrics) {
+function chooseFixPlan(metrics) {
+  const fixes = collectFixes(metrics);
+  const actionable = fixes.filter((fix) => fix.url);
+  const primaryFix = actionable[0] || null;
+
+  if (fixes.length === 0) {
+    const proof = proofFix();
+    return {
+      title: "目前可進入打樣",
+      summary: "主要風險都已低於警戒線，下一步建議做 100% 局部打樣，而不是再套更多修復。",
+      steps: proof.steps,
+      primaryFix: proof,
+    };
+  }
+
+  return {
+    title: "建議修復順序",
+    summary: "以下依建議處理順序排列。先做會改版面或結構的步驟，再做放大與細節修正。",
+    steps: fixes.map((fix) => `${fix.title}：${fix.summary}`),
+    primaryFix,
+  };
+}
+
+function collectFixes(metrics) {
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
   const sharpStatus = statusForSharpness(metrics.sharpness, metrics.print.hasText);
   const colorStatus = statusForColor(metrics.colorRisk);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
-  const total = metrics.scores.total;
+  const fixes = [];
 
-  if (dpiStatus.level === "red" || (dpiStatus.level === "yellow" && total < 85)) {
-    const upscale = getUpscalePreset(metrics);
-    return {
-      title: "先修解析度：下載 Upscayl 桌面版",
-      summary: `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。`,
-      trustNote: "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。",
-      linkText: "下載免費桌面版",
-      url: "https://upscayl.io/",
-      steps: [
-        "打開 Upscayl 下載頁，下載 Windows 桌面版。",
-        "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
-        "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
-        "匯入原圖。",
-        `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
-        upscale.caution,
-        "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
-        "Output Format 選 PNG，避免用低品質 JPG。",
-        "輸出後請放大看臉、文字、線條和暗部，不要只看縮圖。",
-        "回到本工具，點重新上傳修正版檢查分數。",
-      ],
-    };
-  }
+  if (metrics.print.needsEditableLayers) fixes.push(canvaFix());
+  if (metrics.print.isLogoAsset) fixes.push(inkscapeFix());
+  if (bleedStatus.level !== "green") fixes.push(bleedFix());
+  if (dpiStatus.level === "red" || (dpiStatus.level === "yellow" && !metrics.print.isLogoAsset)) fixes.push(upscaleFix(metrics));
+  if (sharpStatus.level === "red") fixes.push(sharpenFix());
+  if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
+  if (colorStatus.level !== "green") fixes.push(colorFix());
+  if (metrics.print.hasText) fixes.push(textFix());
 
-  if (bleedStatus.level !== "green") {
-    return {
-      title: "補出血：使用 Photopea 調整畫布",
-      summary: "出血不足會讓裁切後邊緣露白。先把畫布加大並保留重要內容在安全範圍內。",
-      trustNote: "Photopea 是瀏覽器上的影像編輯器，操作方式接近 Photoshop，適合做裁切、畫布尺寸、出血、簡單銳化與輸出。正式 CMYK 仍建議依印刷廠規格處理。",
-      linkText: "前往 Photopea",
-      url: "https://www.photopea.com/",
-      steps: [
-        "在 Photopea 使用 File > Open 開啟圖片。",
-        "用 Image > Canvas Size 將畫布左右上下各加 3 mm。",
-        "把背景或圖像延伸到出血區，文字和 Logo 不要貼邊。",
-        "匯出 PNG 或 PDF 後回來重新評估。",
-      ],
-    };
-  }
+  return fixes;
+}
 
-  if (sharpStatus.level === "red") {
-    return {
-      title: "改善模糊：使用 Photopea 銳化",
-      summary: "畫面偏糊時，印出來會更明顯。先做輕度銳化，並用 100% 局部檢查臉部、線條與文字。",
-      trustNote: "Photopea 可直接在瀏覽器做基礎修圖，不需要安裝大型軟體。銳化只能改善邊緣觀感，不能真正補回不存在的細節。",
-      linkText: "前往 Photopea",
-      url: "https://www.photopea.com/",
-      steps: [
-        "在 Photopea 開啟圖片。",
-        "使用 Filter > Sharpen > Smart Sharpen 或 Sharpen。",
-        "銳化不要過量，避免邊緣出現白邊或髒點。",
-        "匯出 PNG 後回來重新評估。",
-      ],
-    };
-  }
+function upscaleFix(metrics) {
+  const upscale = getUpscalePreset(metrics);
+  return {
+    title: "修解析度：下載 Upscayl 桌面版",
+    summary: `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。`,
+    trustNote: "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。",
+    linkText: "下載免費桌面版",
+    url: "https://upscayl.io/",
+    steps: [
+      "打開 Upscayl 下載頁，下載 Windows 桌面版。",
+      "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
+      "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
+      "匯入原圖。",
+      `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
+      upscale.caution,
+      "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
+      "Output Format 選 PNG，避免用低品質 JPG。",
+      "輸出後請放大看臉、文字、線條和暗部，不要只看縮圖。",
+      "回到本工具，點重新上傳修正版檢查分數。",
+    ],
+  };
+}
 
-  if (metrics.print.needsEditableLayers) {
-    return {
-      title: "拆成可編輯圖層：使用 Canva 魔法圖層",
-      summary: "這張圖已標記為需要拆成可編輯圖層。可用 Canva 的魔法圖層先做粗略分層，再手動整理物件、文字與版面。",
-      trustNote: "Canva 魔法圖層適合把圖片粗略拆成可編輯元素，方便後續重排、替換或微調。它不是專業向量化，也不保證能完美分離所有物件；複雜厚塗、煙霧、髮絲或細碎光效仍需要人工檢查。",
-      linkText: "前往 Canva",
-      url: "https://www.canva.com/",
-      steps: [
-        "打開 Canva 並建立或開啟一個設計。",
-        "上傳圖片並放到畫布上。",
-        "點選圖片。",
-        "點選編輯圖片或 Edit image。",
-        "在工具中選擇魔法圖層。",
-        "等待 Canva 粗略拆分圖層。",
-        "檢查每個圖層是否拆得合理，必要時手動刪除、重排或修正。",
-        "若要印刷，最後仍需確認尺寸、出血、解析度與印刷店輸出規格。",
-      ],
-    };
-  }
+function bleedFix() {
+  return {
+    title: "補出血：使用 Photopea 調整畫布",
+    summary: "出血不足會讓裁切後邊緣露白。先把畫布加大並保留重要內容在安全範圍內。",
+    trustNote: "Photopea 是瀏覽器上的影像編輯器，操作方式接近 Photoshop，適合做裁切、畫布尺寸、出血、簡單銳化與輸出。正式 CMYK 仍建議依印刷廠規格處理。",
+    linkText: "前往 Photopea",
+    url: "https://www.photopea.com/",
+    steps: [
+      "在 Photopea 使用 File > Open 開啟圖片。",
+      "用 Image > Canvas Size 將畫布左右上下各加 3 mm。",
+      "把背景或圖像延伸到出血區，文字和 Logo 不要貼邊。",
+      "匯出 PNG 或 PDF 後回來重新評估。",
+    ],
+  };
+}
 
-  if (metrics.print.isLogoAsset) {
-    return {
-      title: "向量化圖示：使用 Inkscape Trace Bitmap",
-      summary: "這張圖已標記為 Logo / 圖示 / 徽章素材。若邊界清楚、色塊簡單，可嘗試用 Inkscape 免費轉成 SVG。",
-      trustNote: "Inkscape 是免費開源的向量繪圖軟體，內建 Trace Bitmap 可把點陣圖描成 SVG。它適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片、複雜光影或很多漸層的 AI 圖。",
-      linkText: "下載 Inkscape",
-      url: "https://inkscape.org/",
-      steps: [
-        "下載並安裝 Inkscape。",
-        "用 File > Import 匯入圖片。",
-        "點選圖片，使用 Path > Trace Bitmap。",
-        "黑白 Logo 可先試 Single Scan；彩色徽章可試 Multiple Scans / Colors。",
-        "預覽邊緣是否乾淨，避免產生太多碎色塊。",
-        "按 Apply 後，把原本的點陣圖移開或刪除，只保留描出的向量。",
-        "存成 SVG；若要交給印刷店，可再另存 PDF。",
-        "若結果變髒或檔案很重，代表這張圖不適合硬轉向量，請改用高解析 PNG/PDF。",
-      ],
-    };
-  }
+function sharpenFix() {
+  return {
+    title: "改善模糊：使用 Photopea 銳化",
+    summary: "畫面偏糊時，印出來會更明顯。先做輕度銳化，並用 100% 局部檢查臉部、線條與文字。",
+    trustNote: "Photopea 可直接在瀏覽器做基礎修圖，不需要安裝大型軟體。銳化只能改善邊緣觀感，不能真正補回不存在的細節。",
+    linkText: "前往 Photopea",
+    url: "https://www.photopea.com/",
+    steps: [
+      "在 Photopea 開啟圖片。",
+      "使用 Filter > Sharpen > Smart Sharpen 或 Sharpen。",
+      "銳化不要過量，避免邊緣出現白邊或髒點。",
+      "匯出 PNG 後回來重新評估。",
+    ],
+  };
+}
 
-  if (noiseStatus.level !== "green") {
-    const preset = getNoisePreset(metrics.noise);
-    return {
-      title: "改善噪點：使用 Photopea 備用降噪流程",
-      summary: `目前壓縮/噪點建議用${preset.label}降噪。Reduce Noise 若沒反應，通常是沒有選到圖片圖層；也可改用 Surface Blur 或 Median。`,
-      trustNote: "Photopea 的濾鏡需要套在一般點陣圖層上；如果圖層是文字、形狀、智慧物件或特殊圖層，可能要先 Rasterize。降噪只能降低髒點和壓縮感，不能補回缺失細節。",
-      linkText: "前往 Photopea",
-      url: "https://www.photopea.com/",
-      steps: [
-        "在 Photopea 開啟圖片。",
-        "先在右側 Layers 面板點選圖片圖層；如果沒有選到圖層，濾鏡可能看起來沒反應。",
-        "選 Filter > Noise > Reduce Noise，先確認 Preview 有勾選。",
-        `建議起始值：Strength ${preset.strength}、Protect Detail ${preset.protectDetail}%、Reduce Color Noise ${preset.colorNoise}%。`,
-        preset.note,
-        "如果畫面變太塑膠或金線/碎片消失，把 Strength 降 1-2，或把 Protect Detail 提高 10%。",
-        "如果雜點還很明顯，把 Strength 加 1，但不要一次拉到最高。",
-        "Reduce Noise 仍無法使用時，改試 Filter > Blur > Surface Blur，或 Filter > Noise > Median，Median 從 1 或 2 開始。",
-        "匯出 PNG，避免再次存成低品質 JPG。",
-        "回到本工具，重新上傳修正版檢查分數。",
-      ],
-    };
-  }
+function canvaFix() {
+  return {
+    title: "拆成可編輯圖層：使用 Canva 魔法圖層",
+    summary: "先用 Canva 魔法圖層做粗略分層，再手動整理物件、文字與版面。",
+    trustNote: "Canva 魔法圖層適合把圖片粗略拆成可編輯元素，方便後續重排、替換或微調。它不是專業向量化，也不保證能完美分離所有物件；複雜厚塗、煙霧、髮絲或細碎光效仍需要人工檢查。",
+    linkText: "前往 Canva",
+    url: "https://www.canva.com/",
+    steps: [
+      "打開 Canva 並建立或開啟一個設計。",
+      "上傳圖片並放到畫布上。",
+      "點選圖片。",
+      "點選編輯圖片或 Edit image。",
+      "在工具中選擇魔法圖層。",
+      "等待 Canva 粗略拆分圖層。",
+      "檢查每個圖層是否拆得合理，必要時手動刪除、重排或修正。",
+      "若要印刷，最後仍需確認尺寸、出血、解析度與印刷店輸出規格。",
+    ],
+  };
+}
 
-  if (colorStatus.level !== "green") {
-    return {
-      title: "檢查色偏：使用 Photopea 做 CMYK 預覽",
-      summary: "高飽和 RGB 顏色轉印刷時可能變暗或變灰。先做 CMYK 預覽，再決定是否交給印刷店轉色。",
-      trustNote: "Photopea 可用來初步觀察 RGB 轉印刷色的落差，但不同印刷廠會使用不同 ICC Profile、紙材與油墨。這一步是風險預覽，不是保證色準。",
-      linkText: "前往 Photopea",
-      url: "https://www.photopea.com/",
-      steps: [
-        "在 Photopea 開啟圖片。",
-        "使用 Image > Mode 或色彩相關功能查看 CMYK/印刷預覽。",
-        "特別檢查亮藍、亮綠、紫色與螢光感紅色。",
-        "正式輸出前，仍建議依印刷廠 ICC Profile 處理。",
-      ],
-    };
-  }
+function inkscapeFix() {
+  return {
+    title: "向量化圖示：使用 Inkscape Trace Bitmap",
+    summary: "Logo / 圖示 / 徽章若邊界清楚、色塊簡單，可先用 Inkscape 免費轉成 SVG。",
+    trustNote: "Inkscape 是免費開源的向量繪圖軟體，內建 Trace Bitmap 可把點陣圖描成 SVG。它適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片、複雜光影或很多漸層的 AI 圖。",
+    linkText: "下載 Inkscape",
+    url: "https://inkscape.org/",
+    steps: [
+      "下載並安裝 Inkscape。",
+      "用 File > Import 匯入圖片。",
+      "點選圖片，使用 Path > Trace Bitmap。",
+      "黑白 Logo 可先試 Single Scan；彩色徽章可試 Multiple Scans / Colors。",
+      "預覽邊緣是否乾淨，避免產生太多碎色塊。",
+      "按 Apply 後，把原本的點陣圖移開或刪除，只保留描出的向量。",
+      "存成 SVG；若要交給印刷店，可再另存 PDF。",
+      "若結果變髒或檔案很重，代表這張圖不適合硬轉向量，請改用高解析 PNG/PDF。",
+    ],
+  };
+}
 
-  if (metrics.print.hasText) {
-    return {
-      title: "重排小字：使用 Photopea 或 Illustrator",
-      summary: "圖片內的小字最容易印糊。若這是正式海報或名片，最好把文字重新排成向量或高解析文字圖層。",
-      trustNote: "AI 圖裡的小字常常不是乾淨字型，放大後也容易糊。用編輯工具重新排文字，通常比修原圖更可靠。",
-      linkText: "前往 Photopea",
-      url: "https://www.photopea.com/",
-      steps: [
-        "開啟原圖作為底圖。",
-        "用文字工具重新打上小字，不要直接依賴 AI 圖裡的字。",
-        "文字離裁切邊至少保留安全距離。",
-        "匯出後回到本工具重新評估。",
-      ],
-    };
-  }
+function noiseFix(metrics) {
+  const preset = getNoisePreset(metrics.noise);
+  return {
+    title: "改善噪點：使用 Photopea 備用降噪流程",
+    summary: `目前壓縮/噪點建議用${preset.label}降噪。Reduce Noise 若沒反應，通常是沒有選到圖片圖層；也可改用 Surface Blur 或 Median。`,
+    trustNote: "Photopea 的濾鏡需要套在一般點陣圖層上；如果圖層是文字、形狀、智慧物件或特殊圖層，可能要先 Rasterize。降噪只能降低髒點和壓縮感，不能補回缺失細節。",
+    linkText: "前往 Photopea",
+    url: "https://www.photopea.com/",
+    steps: [
+      "在 Photopea 開啟圖片。",
+      "先在右側 Layers 面板點選圖片圖層；如果沒有選到圖層，濾鏡可能看起來沒反應。",
+      "選 Filter > Noise > Reduce Noise，先確認 Preview 有勾選。",
+      `建議起始值：Strength ${preset.strength}、Protect Detail ${preset.protectDetail}%、Reduce Color Noise ${preset.colorNoise}%。`,
+      preset.note,
+      "如果畫面變太塑膠或金線/碎片消失，把 Strength 降 1-2，或把 Protect Detail 提高 10%。",
+      "如果雜點還很明顯，把 Strength 加 1，但不要一次拉到最高。",
+      "Reduce Noise 仍無法使用時，改試 Filter > Blur > Surface Blur，或 Filter > Noise > Median，Median 從 1 或 2 開始。",
+      "匯出 PNG，避免再次存成低品質 JPG。",
+      "回到本工具，重新上傳修正版檢查分數。",
+    ],
+  };
+}
 
+function colorFix() {
+  return {
+    title: "檢查色偏：使用 Photopea 做 CMYK 預覽",
+    summary: "高飽和 RGB 顏色轉印刷時可能變暗或變灰。先做 CMYK 預覽，再決定是否交給印刷店轉色。",
+    trustNote: "Photopea 可用來初步觀察 RGB 轉印刷色的落差，但不同印刷廠會使用不同 ICC Profile、紙材與油墨。這一步是風險預覽，不是保證色準。",
+    linkText: "前往 Photopea",
+    url: "https://www.photopea.com/",
+    steps: [
+      "在 Photopea 開啟圖片。",
+      "使用 Image > Mode 或色彩相關功能查看 CMYK/印刷預覽。",
+      "特別檢查亮藍、亮綠、紫色與螢光感紅色。",
+      "正式輸出前，仍建議依印刷廠 ICC Profile 處理。",
+    ],
+  };
+}
+
+function textFix() {
+  return {
+    title: "重排小字：使用 Photopea 或 Illustrator",
+    summary: "圖片內的小字最容易印糊。若這是正式海報或名片，最好把文字重新排成向量或高解析文字圖層。",
+    trustNote: "AI 圖裡的小字常常不是乾淨字型，放大後也容易糊。用編輯工具重新排文字，通常比修原圖更可靠。",
+    linkText: "前往 Photopea",
+    url: "https://www.photopea.com/",
+    steps: [
+      "開啟原圖作為底圖。",
+      "用文字工具重新打上小字，不要直接依賴 AI 圖裡的字。",
+      "文字離裁切邊至少保留安全距離。",
+      "匯出後回到本工具重新評估。",
+    ],
+  };
+}
+
+function proofFix() {
   return {
     title: "目前可進入打樣",
     summary: "主要風險都已低於警戒線。下一步建議產生 100% 局部打樣，確認細節和色彩。",
@@ -874,8 +910,9 @@ function chooseFix(metrics) {
 function downloadReport() {
   if (!state.metrics) return;
   const m = state.metrics;
-  const fix = chooseFix(m);
   const workflow = chooseWorkflow(m);
+  const fixPlan = chooseFixPlan(m);
+  const fix = fixPlan.primaryFix || proofFix();
   const lines = [
     "AI 圖印刷前檢查與修復報告",
     `檔名：${m.fileName}`,
@@ -897,10 +934,14 @@ function downloadReport() {
     workflow.summary,
     ...workflow.steps.map((step, index) => `${index + 1}. ${step}`),
     "",
-    `建議下一步：${fix.title}`,
+    "建議修復順序：",
+    fixPlan.summary,
+    ...fixPlan.steps.map((step, index) => `${index + 1}. ${step}`),
+    "",
+    `第一步工具：${fix.title}`,
     `工具說明：${fix.trustNote}`,
     "",
-    "修復步驟：",
+    "第一步操作：",
     ...fix.steps.map((step, index) => `${index + 1}. ${step}`),
     "",
     "給印刷店備註：",
@@ -910,10 +951,10 @@ function downloadReport() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-    link.download = `${safeFileStem(m.fileName)}-${dateStamp()}-print-check-report.txt`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
+  link.download = `${safeFileStem(m.fileName)}-${dateStamp()}-print-check-report.txt`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 function safeFileStem(fileName) {
   const stem = (fileName || "image").replace(/\.[^.]+$/, "");
