@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Image Print Preflight & Fix Guide</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <section class="workspace">
+        <section class="hero-panel">
+          <div class="hero-copy">
+            <p class="eyebrow">AI Print Preflight Guide</p>
+            <h1>AI Image Print Preflight & Fix Guide</h1>
+            <a class="lang-switch" href="./index.html">中文</a>
+            <p>First pick an image and output use, assess the risks for poster, business-card and banner output, then fix it with the step-by-step guide.</p>
+          </div>
+          <div class="hero-notes">
+            <p><strong>Printing limits</strong> This tool provides risk checks and fix directions; it does not guarantee actual print results. Final output still needs to be confirmed against the print shop's specs, paper, ICC profile, CMYK conversion and proof.</p>
+            <p><strong>Mobile tip</strong> On a phone, check the score and printable size first. For upscaling, vectorizing, denoising, adding bleed or re-laying-out text, switch to a computer. For Upscayl, use the free desktop version first.</p>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <aside class="settings">
+            <h2>Image & output settings</h2>
+            <div class="side-upload" id="dropZone">
+              <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" />
+              <div>
+                <strong>Choose image</strong>
+                <span>PNG, JPG, WebP. For SVG / PDF / AI, use vector software or let the shop check them.</span>
+              </div>
+              <div class="side-upload-actions">
+                <button class="primary-button" type="button" id="pickFile">Choose image</button>
+                <button class="ghost-button" type="button" id="loadSample">Load sample</button>
+              </div>
+            </div>
+
+            <label>
+              Use & size
+              <select id="preset">
+                <option value="a3">A3 poster 297 x 420 mm</option>
+                <option value="a2">A2 poster 420 x 594 mm</option>
+                <option value="a1">A1 poster 594 x 841 mm</option>
+                <option value="business-card">Business card 90 x 54 mm</option>
+                <option value="banner">Banner 3000 x 900 mm</option>
+                <option value="custom">Custom size</option>
+              </select>
+            </label>
+
+            <div class="two-cols">
+              <label>
+                Width mm
+                <input id="widthMm" type="number" min="1" step="1" value="297" />
+              </label>
+              <label>
+                Height mm
+                <input id="heightMm" type="number" min="1" step="1" value="420" />
+              </label>
+            </div>
+
+            <label>
+              Viewing distance
+              <select id="viewDistance">
+                <option value="close">Close: business card, A4, A3</option>
+                <option value="poster" selected>Standard poster: A2, A1</option>
+                <option value="far">Far: banner, signboard</option>
+              </select>
+            </label>
+
+            <label>
+              Bleed mm
+              <input id="bleedMm" type="number" min="0" step="0.5" value="3" />
+            </label>
+
+            <div class="switch-row">
+              <input id="isLogoAsset" type="checkbox" />
+              <label for="isLogoAsset">Logo / icon / badge asset</label>
+            </div>
+
+            <button class="inline-help-button" id="openVectorModal" type="button">
+              <span>What is vectorizing?</span>
+              <small>Decide if you need SVG / PDF</small>
+            </button>
+
+            <button class="inline-help-button secondary-help" id="openVectorTutorial" type="button">
+              <span>I want to vectorize / SVG guide</span>
+              <small>Advanced: Inkscape Trace Bitmap</small>
+            </button>
+
+            <div class="switch-row">
+              <input id="needsEditableLayers" type="checkbox" />
+              <label for="needsEditableLayers">Need to split into editable layers</label>
+            </div>
+
+            <button class="primary-button full" id="analyzeButton" type="button" disabled>Re-evaluate</button>
+
+            <div class="info-card side-info">
+              <h2>Current image info</h2>
+              <div class="info-grid">
+                <div><span>Original size</span><strong id="infoPixels">--</strong></div>
+                <div><span>Target output</span><strong id="infoTarget">--</strong></div>
+                <div><span>Effective DPI</span><strong id="infoDpi">--</strong></div>
+                <div><span>Use</span><strong id="infoUse">--</strong></div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="preview">
+            <div class="preview-frame">
+              <img id="previewImage" alt="" />
+              <div id="emptyState" class="empty-state">Upload an image to see the preview and score here.</div>
+            </div>
+            <canvas id="analysisCanvas"></canvas>
+
+            <details class="delivery-card compact-details">
+              <summary>
+                <span>
+                  <p class="eyebrow">Delivery</p>
+                  <strong>File-delivery tips</strong>
+                  <small>Read this when you need .ai / PDF/X</small>
+                </span>
+                <em data-open="Collapse">Expand</em>
+              </summary>
+              <div class="details-body">
+                <p class="eyebrow">Delivery</p>
+                <h2>File-delivery tips</h2>
+                <p>This tool does not directly produce .ai or print-grade PDF/X. As a beginner, do not throw a pile of pro spec jargon at the shop; attach this tool's report and simply ask the print shop to confirm whether they can convert it to a printable format, and whether there is an extra handling fee.</p>
+                <div class="delivery-grid">
+                  <article>
+                    <h3>Beginner delivery scripts</h3>
+                    <ul>
+                      <li>"I am not a design pro; could you help confirm whether this image can be printed?"</li>
+                      <li>"If it needs converting to a printable format, please convert it and tell me the cost."</li>
+                      <li>"If there are resolution, bleed or trim issues, please tell me exactly what to fix."</li>
+                    </ul>
+                  </article>
+                  <article>
+                    <h3>Illustrator</h3>
+                    <ul>
+                      <li>Good for logos, icons, badges and single-page posters.</li>
+                      <li>Confirm artboard size, bleed, and that linked images are embedded.</li>
+                      <li>File > Save As / Save a Copy, choose Adobe PDF; pick the PDF/X preset the shop asks for.</li>
+                    </ul>
+                  </article>
+                  <article>
+                    <h3>InDesign</h3>
+                    <ul>
+                      <li>Good for multi-page layouts with lots of small text.</li>
+                      <li>Set up bleed in document settings; extend images and background past the bleed.</li>
+                      <li>File > Export, choose Adobe PDF (Print); under Marks and Bleeds check Crop Marks and Use Document Bleed Settings.</li>
+                    </ul>
+                  </article>
+                  <article>
+                    <h3>Acrobat Pro</h3>
+                    <ul>
+                      <li>Good for final checks, not as a main design tool.</li>
+                      <li>Use Preflight to check PDF/X, fonts, color and image resolution.</li>
+                      <li>If Preflight reports errors, fix the source in Illustrator / InDesign and re-export.</li>
+                    </ul>
+                  </article>
+                </div>
+              </div>
+            </details>
+
+            <div class="fix-card" id="fixCard">
+              <div class="fix-heading">
+                <div>
+                  <p class="eyebrow">Fix Plan</p>
+                  <h2 id="fixTitle">Waiting for evaluation</h2>
+                </div>
+                <div class="fix-actions">
+                  <button id="reuploadFixed" class="ghost-button" type="button" disabled>Re-upload fixed version</button>
+                </div>
+              </div>
+              <p id="fixSummary">After you upload an image, the suggested fix steps will be listed here in order.</p>
+              <details class="workflow-card compact-details">
+                <summary>
+                  <span>
+                    <strong>Workflow principles</strong>
+                    <small>Deciding on layering, upscaling or vectorizing</small>
+                  </span>
+                  <em data-open="Collapse">Expand</em>
+                </summary>
+                <div class="details-body">
+                  <p id="workflowSummary">After upload, this suggests whether to layer first, upscale first, or vectorize, based on your use.</p>
+                  <ol id="workflowSteps">
+                    <li>Upload an AI image first.</li>
+                  </ol>
+                </div>
+              </details>
+              <details class="fix-overview-card compact-details">
+                <summary>
+                  <span>
+                    <strong>Fix overview</strong>
+                    <small>Quick view of the full fix order</small>
+                  </span>
+                  <em data-open="Collapse">Expand</em>
+                </summary>
+                <div class="details-body">
+                  <ol class="fix-overview" id="fixSteps">
+                    <li>Upload an AI image first.</li>
+                  </ol>
+                </div>
+              </details>
+              <div class="fix-tabs" id="fixTabs" role="tablist" aria-label="Fix step tabs"></div>
+              <article class="fix-detail">
+                <div class="fix-detail-heading">
+                  <div>
+                    <p class="eyebrow" id="fixStepLabel">Step 1</p>
+                    <h3 id="fixStepTitle">Waiting for evaluation</h3>
+                  </div>
+                  <button id="fixLink" class="primary-button" type="button" disabled>View tool</button>
+                </div>
+                <p id="fixStepSummary">After upload, the full guide for each step appears here.</p>
+                <div class="trust-note" id="fixStepTrustNote">Tool notes will appear here.</div>
+                <ol id="fixStepList">
+                  <li>Upload an AI image first.</li>
+                </ol>
+                <div class="fix-extra-guides" id="fixExtraGuides"></div>
+                <div class="step-nav">
+                  <button id="fixPrev" class="ghost-button" type="button" disabled>Previous</button>
+                  <button id="fixNext" class="ghost-button" type="button" disabled>Next</button>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section class="results">
+            <div class="score-band" id="scoreBand">
+              <span id="scoreLabel">Not evaluated yet</span>
+              <strong id="scoreValue">--</strong>
+            </div>
+
+            <div class="report-card">
+              <div>
+                <h2>Check report</h2>
+                <p>Download a print-inquiry summary you can hand to a print or ad shop — size, effective DPI, bleed, color risk and items for the shop to confirm.</p>
+              </div>
+              <div class="report-actions">
+                <button id="copyShopMessage" class="ghost-button" type="button" disabled>Copy print-inquiry text</button>
+                <button id="downloadReport" class="primary-button" type="button" disabled>Download report for the shop</button>
+                <a class="ghost-button jump-fix" href="#fixCard">View fix guide</a>
+              </div>
+            </div>
+
+            <div class="metric-list">
+              <article class="metric">
+                <div>
+                  <span>Effective DPI (estimated from output size)</span>
+                  <strong id="dpiMetric">--</strong>
+                </div>
+                <em id="dpiStatus">Waiting for image</em>
+              </article>
+              <article class="metric">
+                <div>
+                  <span>Sharpness</span>
+                  <strong id="sharpMetric">--</strong>
+                </div>
+                <em id="sharpStatus">Waiting for image</em>
+              </article>
+              <article class="metric">
+                <div>
+                  <span>Compression / noise</span>
+                  <strong id="noiseMetric">--</strong>
+                </div>
+                <em id="noiseStatus">Waiting for image</em>
+              </article>
+              <article class="metric">
+                <div>
+                  <span>CMYK color-shift risk estimate</span>
+                  <strong id="colorMetric">--</strong>
+                </div>
+                <em id="colorStatus">Waiting for image</em>
+              </article>
+              <article class="metric">
+                <div>
+                  <span>Bleed setting</span>
+                  <strong id="bleedMetric">--</strong>
+                </div>
+                <em id="bleedStatus">Waiting for settings</em>
+              </article>
+            </div>
+
+            <p class="small-note">This tool cannot auto-detect whether the background truly extends into the bleed; confirm it in your image editor.</p>
+
+            <div class="print-size-card">
+              <h2>How large can it print</h2>
+              <div class="size-list">
+                <div><span>300 DPI fine print</span><strong id="size300">--</strong></div>
+                <div><span>150 DPI standard poster</span><strong id="size150">--</strong></div>
+                <div><span>72 DPI distant billboard</span><strong id="size72">--</strong></div>
+              </div>
+            </div>
+
+            <div class="advice">
+              <h2>Tips</h2>
+              <ul id="adviceList">
+                <li>Upload an AI-generated image first.</li>
+              </ul>
+            </div>
+          </section>
+        </section>
+      </section>
+    </main>
+
+    <div class="custom-modal-overlay" id="vectorModal" role="dialog" aria-modal="true" aria-labelledby="vectorModalTitle" hidden>
+      <section class="custom-modal vector-modal" role="document">
+        <button class="modal-close-button" id="closeVectorModal" type="button" aria-label="Close vectorizing info">×</button>
+        <p class="eyebrow">Vector Guide</p>
+        <h2 id="vectorModalTitle">What is vectorizing?</h2>
+        <p class="modal-lead">Vectorizing redraws a pixel-based raster image (PNG / JPG) into lines, nodes and color blocks. A successful logo, icon or badge can scale up huge without the edges going blurry from too few pixels. But it is an advanced option, not a must for printing; in most cases, raising the resolution and exporting a high-res PNG / PDF is faster.</p>
+        <div class="vector-decision-grid">
+          <section>
+            <h3>Good candidates for vectorizing</h3>
+            <ul>
+              <li>Clear edges, clean background.</li>
+              <li>Simple color blocks, roughly within 8 to 16 colors.</li>
+              <li>Logos, icons, badges, silhouettes or flat symbols.</li>
+            </ul>
+          </section>
+          <section>
+            <h3>Do not force-convert</h3>
+            <ul>
+              <li>Heavily painted characters, photos, lots of smoke or lighting.</li>
+              <li>Fine gradients or textures turn into tons of color blocks.</li>
+              <li>If the result is messy or the file is heavy, use high-res PNG / PDF instead.</li>
+            </ul>
+          </section>
+        </div>
+        <div class="vector-modal-note">
+          <strong>Do I still need to fix resolution after vectorizing?</strong>
+          <p>If you have cleanly converted it to pure vector SVG / PDF, that icon itself usually needs no further DPI fixing. If your artwork still has a raster background, photos or textures, or you will export as PNG in the end, come back to this tool to check resolution.</p>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" id="openVectorTutorialFromModal" type="button">I want to vectorize</button>
+          <button class="primary-button" id="vectorModalDone" type="button">Got it</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="custom-modal-overlay" id="guideModal" role="dialog" aria-modal="true" aria-labelledby="guideModalTitle" hidden>
+      <section class="custom-modal guide-modal" role="document">
+        <button class="modal-close-button" id="closeGuideModal" type="button" aria-label="Close guide">×</button>
+        <p class="eyebrow" id="guideModalEyebrow">Guide</p>
+        <h2 id="guideModalTitle">Guide</h2>
+        <p class="modal-lead" id="guideModalSummary"></p>
+        <div class="guide-modal-content" id="guideModalContent"></div>
+        <div class="modal-actions">
+          <button class="primary-button" id="guideModalDone" type="button">Got it</button>
+        </div>
+      </section>
+    </div>
+
+    <dialog id="toolDialog" class="tool-dialog">
+      <form method="dialog">
+        <p class="eyebrow">Tool Notice</p>
+        <h2 id="dialogTitle">Go to fix tool</h2>
+        <p id="dialogSummary"></p>
+        <div class="trust-note" id="dialogTrustNote"></div>
+        <div class="dialog-actions">
+          <button class="ghost-button" value="cancel" type="submit">Use later</button>
+          <button id="confirmOpenTool" class="primary-button" value="confirm" type="button">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+    <script src="app.en.js"></script>
+  </body>
+</html>

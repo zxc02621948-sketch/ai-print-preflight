@@ -1286,3 +1286,21 @@ body.modal-open {
     flex-direction: column-reverse;
   }
 }
+
+.lang-switch {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.lang-switch:hover {
+  background: var(--accent);
+  color: #fff;
+}
