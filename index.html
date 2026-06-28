@@ -17,7 +17,7 @@
             <p>先選圖片與輸出用途，評估海報、名片、帆布輸出風險，再依分步教學修復。</p>
           </div>
           <div class="hero-notes">
-            <p><strong>印刷邊界</strong> 本工具提供風險檢查與修復方向，不保證實際印刷結果；正式輸出仍需依印刷店規格、紙材、ICC Profile、CMYK 轉換與打樣結果確認。</p>
+            <p><strong>印刷邊界</strong> 本工具提供風險檢查與修復方向，不保證實際印刷結果；正式輸出仍需依印刷店規格、紙材與實際輸出結果確認。</p>
             <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、降噪、補出血或重排文字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
           </div>
         </section>
@@ -61,15 +61,6 @@
             </div>
 
             <label>
-              觀看距離
-              <select id="viewDistance">
-                <option value="close">近距離：名片、A4、A3</option>
-                <option value="poster" selected>一般海報：A2、A1</option>
-                <option value="far">遠距離：帆布、看板</option>
-              </select>
-            </label>
-
-            <label>
               出血 mm
               <input id="bleedMm" type="number" min="0" step="0.5" value="3" />
             </label>
@@ -108,10 +99,18 @@
           </aside>
 
           <section class="preview">
-            <div class="preview-frame">
-              <img id="previewImage" alt="" />
-              <div id="emptyState" class="empty-state">上傳圖片後會在這裡看到預覽與分數</div>
+            <div class="preview-frame" id="previewFrame">
+              <div class="print-sim" id="printSim" hidden>
+                <img class="sim-layer sim-actual" id="simActual" alt="" />
+                <img class="sim-layer sim-ideal" id="previewImage" alt="" />
+                <div class="sim-divider" id="simDivider"></div>
+                <input id="simSlider" class="sim-slider" type="range" min="0" max="100" value="50" aria-label="拖曳比較清晰度" />
+                <span class="sim-tag sim-tag-left" id="simTagLeft">本來的樣子</span>
+                <span class="sim-tag sim-tag-right" id="simTagRight">印出來的樣子</span>
+              </div>
+              <div id="emptyState" class="empty-state">上傳圖片後，這裡會用拖曳對比顯示「印出來大概多清楚」</div>
             </div>
+            <p class="sim-caption" id="simCaption" hidden></p>
             <canvas id="analysisCanvas"></canvas>
 
             <details class="delivery-card compact-details">
@@ -119,45 +118,21 @@
                 <span>
                   <p class="eyebrow">Delivery</p>
                   <strong>轉檔交付建議</strong>
-                  <small>需要 .ai / PDF/X 時再看</small>
+                  <small>不知道怎麼跟店家說時看</small>
                 </span>
                 <em data-open="收合內容">展開內容</em>
               </summary>
               <div class="details-body">
                 <p class="eyebrow">Delivery</p>
                 <h2>轉檔交付建議</h2>
-                <p>本工具不直接產生 .ai 或印刷級 PDF/X。新手送印時不要先丟一堆專業規格名詞；建議附上本工具報告，直接請印刷店協助確認能否代轉成可印格式，並詢問是否需要加收處理費。</p>
+                <p>本工具不直接產生 .ai 檔或印刷級 PDF 檔。新手送印時不要先丟一堆專業規格名詞，直接請印刷店協助確認已調整過的圖檔能否直接印刷、或代轉成可印格式，並詢問是否需要加收處理費。</p>
                 <div class="delivery-grid">
                   <article>
                     <h3>新手交付話術</h3>
                     <ul>
-                      <li>「我不是設計專業，想請你們協助確認這張圖能不能印。」</li>
+                      <li>「想請你們協助確認這張圖能不能印。」</li>
                       <li>「如果需要轉成你們可印的格式，請協助代轉並告知費用。」</li>
-                      <li>「如果解析度、出血或裁切有問題，也請直接告訴我需要補哪裡。」</li>
-                    </ul>
-                  </article>
-                  <article>
-                    <h3>Illustrator</h3>
-                    <ul>
-                      <li>適合 Logo、圖示、徽章、單頁海報。</li>
-                      <li>確認工作區尺寸、出血、連結圖片已嵌入。</li>
-                      <li>File > Save As / Save a Copy，選 Adobe PDF；依店家要求選 PDF/X 預設。</li>
-                    </ul>
-                  </article>
-                  <article>
-                    <h3>InDesign</h3>
-                    <ul>
-                      <li>適合多頁、排版、小字多的印刷物。</li>
-                      <li>先在文件設定建立出血，圖片與底色要延伸到出血外。</li>
-                      <li>File > Export，選 Adobe PDF (Print)，Marks and Bleeds 勾 Crop Marks 與 Use Document Bleed Settings。</li>
-                    </ul>
-                  </article>
-                  <article>
-                    <h3>Acrobat Pro</h3>
-                    <ul>
-                      <li>適合最後檢查，不適合當主要設計工具。</li>
-                      <li>用 Preflight 檢查 PDF/X、字型、色彩與影像解析度。</li>
-                      <li>若 Preflight 報錯，回 Illustrator / InDesign 修原檔再重新輸出。</li>
+                      <li>「如果解析度、出血或裁切有問題，也請直接告訴我需要怎麼修改。」</li>
                     </ul>
                   </article>
                 </div>
@@ -233,16 +208,8 @@
               <strong id="scoreValue">--</strong>
             </div>
 
-            <div class="report-card">
-              <div>
-                <h2>檢查報告</h2>
-                <p>下載一份可交給印刷店或廣告店參考的送印詢問摘要，包含尺寸、有效 DPI、出血、色彩風險與請店家確認事項。</p>
-              </div>
-              <div class="report-actions">
-                <button id="copyShopMessage" class="ghost-button" type="button" disabled>複製送印詢問文字</button>
-                <button id="downloadReport" class="primary-button" type="button" disabled>下載給店家看的報告</button>
-                <a class="ghost-button jump-fix" href="#fixCard">查看修復教學</a>
-              </div>
+            <div class="report-actions">
+              <a class="ghost-button jump-fix" href="#fixCard">查看修復教學</a>
             </div>
 
             <div class="metric-list">
@@ -255,24 +222,17 @@
               </article>
               <article class="metric">
                 <div>
-                  <span>銳利度</span>
+                  <span>銳利度<small>原圖本身清不清楚</small></span>
                   <strong id="sharpMetric">--</strong>
                 </div>
                 <em id="sharpStatus">等待圖片</em>
               </article>
               <article class="metric">
                 <div>
-                  <span>壓縮 / 噪點</span>
+                  <span>雜訊 / 壓縮髒點<small>AI 雜點・JPG 壓縮痕跡</small></span>
                   <strong id="noiseMetric">--</strong>
                 </div>
                 <em id="noiseStatus">等待圖片</em>
-              </article>
-              <article class="metric">
-                <div>
-                  <span>CMYK 色偏風險估算</span>
-                  <strong id="colorMetric">--</strong>
-                </div>
-                <em id="colorStatus">等待圖片</em>
               </article>
               <article class="metric">
                 <div>

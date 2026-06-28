@@ -6,11 +6,17 @@ const presets = {
   banner: { width: 3000, height: 900, distance: "far" },
 };
 
-const targets = {
-  close: { green: 300, yellow: 220 },
-  poster: { green: 200, yellow: 150 },
-  far: { green: 120, yellow: 72 },
-};
+// Decide the acceptable effective-DPI threshold based on the actual longest output edge (mm).
+// Print-shop reality: normal output is always treated as 300 DPI; only large-format output relaxes this,
+// because hitting 300 would make the file so big the computer chokes, and from a distance you don't need it anyway.
+// Going above 300 won't look sharper, it just gives you room to scale up or down; for small sizes the threshold tops out at 300 too.
+function getDpiTargets(widthMm, heightMm) {
+  const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
+  if (longest <= 1000) return { green: 300, yellow: 250, tier: "standard" };
+  if (longest <= 2000) return { green: 180, yellow: 120, tier: "large" };
+  if (longest <= 5000) return { green: 120, yellow: 80, tier: "xlarge" };
+  return { green: 80, yellow: 50, tier: "huge" };
+}
 
 const state = {
   fileName: "",
@@ -30,11 +36,18 @@ const els = {
   pickFile: document.querySelector("#pickFile"),
   loadSample: document.querySelector("#loadSample"),
   previewImage: document.querySelector("#previewImage"),
+  previewFrame: document.querySelector("#previewFrame"),
+  printSim: document.querySelector("#printSim"),
+  simActual: document.querySelector("#simActual"),
+  simDivider: document.querySelector("#simDivider"),
+  simSlider: document.querySelector("#simSlider"),
+  simTagLeft: document.querySelector("#simTagLeft"),
+  simTagRight: document.querySelector("#simTagRight"),
+  simCaption: document.querySelector("#simCaption"),
   emptyState: document.querySelector("#emptyState"),
   preset: document.querySelector("#preset"),
   widthMm: document.querySelector("#widthMm"),
   heightMm: document.querySelector("#heightMm"),
-  viewDistance: document.querySelector("#viewDistance"),
   bleedMm: document.querySelector("#bleedMm"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
@@ -55,8 +68,6 @@ const els = {
   sharpStatus: document.querySelector("#sharpStatus"),
   noiseMetric: document.querySelector("#noiseMetric"),
   noiseStatus: document.querySelector("#noiseStatus"),
-  colorMetric: document.querySelector("#colorMetric"),
-  colorStatus: document.querySelector("#colorStatus"),
   bleedMetric: document.querySelector("#bleedMetric"),
   bleedStatus: document.querySelector("#bleedStatus"),
   size300: document.querySelector("#size300"),
@@ -96,8 +107,6 @@ const els = {
   dialogSummary: document.querySelector("#dialogSummary"),
   dialogTrustNote: document.querySelector("#dialogTrustNote"),
   confirmOpenTool: document.querySelector("#confirmOpenTool"),
-  copyShopMessage: document.querySelector("#copyShopMessage"),
-  downloadReport: document.querySelector("#downloadReport"),
 };
 
 els.pickFile.addEventListener("click", () => els.fileInput.click());
@@ -122,8 +131,10 @@ els.guideModal.addEventListener("click", (event) => {
 els.confirmOpenTool.addEventListener("click", confirmOpenTool);
 els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
 els.analyzeButton.addEventListener("click", analyze);
-els.copyShopMessage.addEventListener("click", copyShopMessage);
-els.downloadReport.addEventListener("click", downloadReport);
+els.simSlider.addEventListener("input", (event) => setSimSlider(Number(event.target.value)));
+window.addEventListener("resize", () => {
+  if (state.metrics) renderPrintSim(state.metrics);
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.guideModal.hidden) {
@@ -159,12 +170,11 @@ els.preset.addEventListener("change", () => {
     const preset = presets[els.preset.value];
     els.widthMm.value = preset.width;
     els.heightMm.value = preset.height;
-    els.viewDistance.value = preset.distance;
   }
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
+[els.widthMm, els.heightMm, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -188,9 +198,8 @@ async function loadFile(file) {
     els.previewImage.src = url;
     els.previewImage.style.display = "block";
     els.emptyState.style.display = "none";
+    els.simSlider.value = 50; // Every time a new image loads, the divider line goes back to the center
     els.analyzeButton.disabled = false;
-    els.downloadReport.disabled = false;
-    els.copyShopMessage.disabled = false;
     els.reuploadFixed.disabled = false;
     analyze();
   };
@@ -212,38 +221,34 @@ function resetForUnsupportedFile(file) {
   state.currentFix = null;
 
   els.previewImage.removeAttribute("src");
-  els.previewImage.style.display = "none";
-  els.emptyState.style.display = "block";
-  els.emptyState.textContent = "Only PNG, JPG and WebP are supported. For SVG / PDF / AI, check them in Inkscape, Illustrator or at the print shop; to evaluate here, save as PNG, JPG or WebP.";
+  hidePrintSim();
+  els.emptyState.textContent = "Only PNG, JPG and WebP are supported right now. For SVG / PDF / AI files, check them in Inkscape, Illustrator, or with your print shop; to bring them back into this tool, save them as PNG, JPG or WebP first.";
   els.analyzeButton.disabled = true;
-  els.downloadReport.disabled = true;
-  els.copyShopMessage.disabled = true;
   els.reuploadFixed.disabled = true;
 
   els.scoreBand.className = "score-band";
   els.scoreLabel.textContent = "Format not supported";
   els.scoreValue.textContent = "--";
-  setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "Waiting" });
-  setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "Waiting" });
-  setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "Waiting" });
-  setMetric(els.colorMetric, els.colorStatus, "--", { level: "", label: "Waiting" });
-  setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "Waiting" });
+  setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "Waiting for image" });
+  setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "Waiting for image" });
+  setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "Waiting for image" });
+  setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "Waiting for image" });
   els.infoPixels.textContent = "--";
   els.infoTarget.textContent = "--";
   els.infoDpi.textContent = "--";
   els.infoUse.textContent = "--";
-  els.workflowSummary.textContent = "SVG / PDF / AI are vector or delivery files; inspect them zoomed-in with pro editing tools, or export a raster image and come back to check effective DPI.";
-  els.workflowSteps.innerHTML = "<li>To check print resolution, export PNG, JPG or WebP from your vector tool.</li><li>To deliver to a shop, use PDF, AI, TIFF, PNG or the shop's required format.</li>";
-  els.adviceList.innerHTML = "<li>This tool no longer scores SVG, to avoid giving a meaningless score.</li>";
-  els.fixTitle.textContent = "Unsupported format";
-  els.fixSummary.textContent = "Please use PNG, JPG or WebP for preflight checks.";
-  els.fixSteps.innerHTML = "<li>For SVG / PDF / AI, go back to vector software or let the shop do a delivery check.</li>";
+  els.workflowSummary.textContent = "SVG / PDF / AI are vector or delivery files. Open them in a professional editor to zoom in and check, or export a raster image first and then bring that back into this tool to check the effective DPI.";
+  els.workflowSteps.innerHTML = "<li>To check print resolution, export a PNG, JPG or WebP from your vector tool.</li><li>To hand off to a shop, use PDF, AI, TIFF, PNG, or whatever format the shop asks for.</li>";
+  els.adviceList.innerHTML = "<li>This tool no longer scores SVG files, to avoid giving a number that doesn't really mean anything.</li>";
+  els.fixTitle.textContent = "This format isn't supported";
+  els.fixSummary.textContent = "Switch to PNG, JPG or WebP for the pre-print check.";
+  els.fixSteps.innerHTML = "<li>For SVG / PDF / AI, go back to your vector software, or let the shop do the delivery check.</li>";
   els.fixTabs.innerHTML = "";
   els.fixStepLabel.textContent = "Format";
-  els.fixStepTitle.textContent = "Unsupported format";
-  els.fixStepSummary.textContent = "These files are better verified in Inkscape, Illustrator, Acrobat or the print shop's workflow.";
-  els.fixStepTrustNote.textContent = "This tool focuses on checking the effective DPI, noise, color-shift risk and bleed setting of AI-generated raster images.";
-  els.fixStepList.innerHTML = "<li>To check resolution here, save as PNG, JPG or WebP first.</li><li>If it is already a final delivery file, let the print shop confirm the PDF/AI/TIFF/PNG format requirements.</li>";
+  els.fixStepTitle.textContent = "This format isn't supported";
+  els.fixStepSummary.textContent = "These files are better confirmed in Inkscape, Illustrator, Acrobat, or your print shop's workflow.";
+  els.fixStepTrustNote.textContent = "This tool focuses on checking the effective DPI, sharpness, noise and bleed of AI-generated raster images.";
+  els.fixStepList.innerHTML = "<li>To bring it back into this tool to check resolution, save it as PNG, JPG or WebP first.</li><li>If it's already a final delivery file, let the print shop confirm the PDF/AI/TIFF/PNG format requirements.</li>";
   els.fixExtraGuides.innerHTML = "";
   els.fixLink.disabled = true;
   els.fixPrev.disabled = true;
@@ -296,15 +301,13 @@ function analyze() {
   const sampled = sampleImage(state.bitmap || state.image);
   const sharpness = estimateSharpness(sampled);
   const noise = estimateNoise(sampled);
-  const colorRisk = estimateCmykRisk(sampled);
   const bleedScore = print.bleedMm >= 3 ? 10 : print.bleedMm > 0 ? 7 : 3;
 
-  const dpiScore = scoreDpi(dpi.effective, print.distance);
+  const dpiScore = scoreDpi(dpi.effective, print.dpiTargets);
   const sharpScore = scoreSharpness(sharpness);
   const noiseScore = scoreNoise(noise);
-  const colorScore = scoreColor(colorRisk);
-  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + colorScore + bleedScore), 0, 100);
-  const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise, colorRisk });
+  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + bleedScore), 0, 100);
+  const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise });
 
   state.metrics = {
     fileName: state.fileName,
@@ -314,18 +317,19 @@ function analyze() {
     dpi,
     sharpness,
     noise,
-    colorRisk,
-    scores: { total, dpiScore, sharpScore, noiseScore, colorScore, bleedScore },
+    scores: { total, dpiScore, sharpScore, noiseScore, bleedScore },
   };
 
   renderMetrics(state.metrics);
 }
 
 function getPrintSettings() {
+  const widthMm = Number(els.widthMm.value) || 1;
+  const heightMm = Number(els.heightMm.value) || 1;
   return {
-    widthMm: Number(els.widthMm.value) || 1,
-    heightMm: Number(els.heightMm.value) || 1,
-    distance: els.viewDistance.value,
+    widthMm,
+    heightMm,
+    dpiTargets: getDpiTargets(widthMm, heightMm),
     bleedMm: Number(els.bleedMm.value) || 0,
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
@@ -401,39 +405,12 @@ function estimateNoise(sample) {
   };
 }
 
-function estimateCmykRisk(sample) {
-  const { data } = sample;
-  let risky = 0;
-  let vivid = 0;
-  const total = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i] / 255;
-    const g = data[i + 1] / 255;
-    const b = data[i + 2] / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const saturation = max === 0 ? 0 : (max - min) / max;
-    const brightness = max;
-    const isNeonGreen = g > 0.72 && r < 0.35 && b < 0.45;
-    const isElectricBlue = b > 0.72 && g > 0.35 && r < 0.35;
-    const isHotPurple = b > 0.6 && r > 0.55 && g < 0.32;
-    const isHotRed = r > 0.8 && g < 0.22 && b < 0.22;
-    if (saturation > 0.62 && brightness > 0.72) vivid++;
-    if (isNeonGreen || isElectricBlue || isHotPurple || isHotRed) risky++;
-  }
-  return {
-    vividRatio: vivid / total,
-    riskyRatio: risky / total,
-  };
-}
-
 function gray(data, width, x, y) {
   const index = (y * width + x) * 4;
   return data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
 }
 
-function scoreDpi(dpi, distance) {
-  const target = targets[distance];
+function scoreDpi(dpi, target) {
   if (dpi >= target.green) return 40;
   if (dpi >= target.yellow) return 28 + ((dpi - target.yellow) / (target.green - target.yellow)) * 12;
   return clamp((dpi / target.yellow) * 28, 0, 28);
@@ -450,17 +427,11 @@ function scoreNoise(noise) {
   return clamp(10 - penalty, 2, 10);
 }
 
-function scoreColor(risk) {
-  const penalty = risk.riskyRatio * 45 + risk.vividRatio * 12;
-  return clamp(10 - penalty, 2, 10);
-}
-
 function normalizeTotal(rawTotal, data) {
   const levels = [
-    statusForDpi(data.dpi.effective, data.print.distance).level,
+    statusForDpi(data.dpi.effective, data.print.dpiTargets).level,
     statusForSharpness(data.sharpness).level,
     statusForNoise(data.noise).level,
-    statusForColor(data.colorRisk).level,
     statusForBleed(data.print.bleedMm).level,
   ];
 
@@ -478,17 +449,17 @@ function normalizeTotal(rawTotal, data) {
 function renderMetrics(metrics) {
   const { total } = metrics.scores;
   const band = total >= 85 ? "green" : total >= 70 ? "yellow" : "red";
-  const label = total >= 85 ? "Green: ready for pre-print" : total >= 70 ? "Yellow: fix before printing" : "Red: not recommended to print as is";
+  const label = total >= 85 ? "Green: ready for pre-print steps" : total >= 70 ? "Yellow: fix before printing" : "Red: not ready to print";
   els.scoreBand.className = `score-band ${band}`;
   els.scoreLabel.textContent = label;
   els.scoreValue.textContent = total;
 
-  setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.distance));
-  setMetric(els.sharpMetric, els.sharpStatus, metrics.sharpness.toFixed(1), statusForSharpness(metrics.sharpness));
-  setMetric(els.noiseMetric, els.noiseStatus, `${Math.round(metrics.noise.speckleRatio * 100)}%`, statusForNoise(metrics.noise));
-  setMetric(els.colorMetric, els.colorStatus, `${Math.round(metrics.colorRisk.riskyRatio * 100)}%`, statusForColor(metrics.colorRisk));
+  setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets));
+  setMetric(els.sharpMetric, els.sharpStatus, sharpnessWord(metrics.sharpness), statusForSharpness(metrics.sharpness));
+  setMetric(els.noiseMetric, els.noiseStatus, noiseWord(metrics.noise), statusForNoise(metrics.noise));
   setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
   renderImageInfo(metrics);
+  renderPrintSim(metrics);
   renderPrintableSizes(metrics);
   renderWorkflowOrder(metrics);
 
@@ -505,56 +476,116 @@ function renderWorkflowOrder(metrics) {
 function chooseWorkflow(metrics) {
   if (metrics.print.needsEditableLayers && metrics.print.isLogoAsset) {
     return {
-      summary: "Logo / 圖示若也需要改物件，先處理版面與圖層，再回來檢查解析度；向量化只在超大輸出、改色拆物件或店家要求時再做。",
+      summary: "If a logo / icon also needs object edits, handle the layout and layers first, then come back to check resolution; only vectorize for very large output, recoloring or splitting objects, or when the shop asks.",
       steps: [
-        "先確認輸出尺寸、方向、比例、留白與出血。",
-        "如果要重排物件或改版面，先用 Canva 魔法圖層或 Photopea / Illustrator 處理。",
-        "回本工具檢查有效 DPI；不足時先用 Upscayl 放大，這是多數送印情境最簡單的路線。",
-        "只有需要超大尺寸、長期重複使用、改色拆物件或店家要求向量檔時，再考慮 Inkscape Trace Bitmap。",
-        "最後做 100% 局部打樣，確認邊緣、暗部與色彩。",
+        "First confirm the output size, orientation, proportions, margins and bleed.",
+        "If you need to rearrange objects or change the layout, do it first with Canva Magic layers or Photopea / Illustrator.",
+        "Come back to this tool to check the effective DPI; if it's too low, upscale with Upscayl first — this is the simplest route for most print jobs.",
+        "Only consider Inkscape Trace Bitmap when you need very large sizes, long-term repeated use, recoloring or splitting objects, or the shop asks for a vector file.",
+        "Finally, zoom to 100% and check edges, shadows and fine details.",
       ],
     };
   }
 
   if (metrics.print.needsEditableLayers) {
     return {
-      summary: "需要拆圖層時，先做會改版面的事情，再做放大；這樣檔案比較小，Canva / Photopea 也比較好處理。",
+      summary: "When you need to split layers, do the things that change the layout first, then upscale; that keeps the file smaller and easier for Canva / Photopea to handle.",
       steps: [
-        "先確認輸出尺寸、方向、比例、留白與是否需要出血。",
-        "用 Canva 魔法圖層粗略拆分物件。",
-        "先整理圖層、重排文字、調整物件與版面。",
-        "匯出高解析 PNG 或 PDF。",
-        "回到本工具重新檢查有效 DPI；如果不足，再用 Upscayl 放大。",
-        "最後做輕度降噪 / 銳化，並產生 100% 局部打樣。",
+        "First confirm the output size, orientation, proportions, margins and whether you need bleed.",
+        "Use Canva Magic layers to roughly split out the objects.",
+        "First tidy up the layers, rearrange the text, and adjust the objects and layout.",
+        "Export a high-resolution PNG or PDF.",
+        "Come back to this tool and re-check the effective DPI; if it's too low, upscale with Upscayl.",
+        "Finally do a light denoise / sharpen, then zoom to 100% to check the details.",
       ],
     };
   }
 
   if (metrics.print.isLogoAsset) {
     return {
-      summary: "Logo / 圖示 / 徽章先走高解析 PNG/PDF 路線；向量化是進階選項，不是送印必做。",
+      summary: "For logos / icons / badges, go the high-resolution PNG/PDF route first; vectorizing is an advanced option, not a must for printing.",
       steps: [
-        "先用本工具確認有效 DPI、出血和色彩風險。",
-        "如果 DPI 不足，先用 Upscayl 放大，通常比硬轉向量更快。",
-        "放大後檢查邊緣、尖角和色塊是否乾淨。",
-        "只有需要超大輸出、長期重複使用、改色拆物件或店家要求向量檔時，再用 Inkscape Trace Bitmap。",
-        "向量化結果如果變髒或需要大量修節點，就回到高解析 PNG/PDF 路線。",
-        "最後再依印刷店規格確認 CMYK、PDF/X、出血與打樣。",
+        "First use this tool to confirm the effective DPI, bleed and color risks.",
+        "If the DPI is too low, upscale with Upscayl first — usually faster than forcing a vector conversion.",
+        "After upscaling, check that the edges, sharp corners and color blocks are clean.",
+        "Only use Inkscape Trace Bitmap when you need very large output, long-term repeated use, recoloring or splitting objects, or the shop asks for a vector file.",
+        "If the vectorized result gets dirty or needs a lot of node editing, go back to the high-resolution PNG/PDF route.",
+        "Finally, confirm CMYK, PDF/X and bleed according to your print shop's specs.",
       ],
     };
   }
 
   return {
-    summary: "一般 AI 海報或角色圖建議先處理版面，再放大；最後才做印刷輸出檢查。",
+    summary: "For a typical AI poster or character image, handle the layout first, then upscale; do the print-output check last.",
     steps: [
-      "先決定輸出尺寸、方向與比例，確認是否需要裁切、補背景或加出血。",
-      "先做會改版面的事情，例如裁切、補背景、重排文字或物件。",
-      "回到本工具檢查有效 DPI；不足時再用 Upscayl 放大。",
-      "放大後再做輕度降噪與銳化，避免先修完又被放大破壞。",
-      "做 100% 局部打樣，確認臉、邊緣、暗部與色彩。",
-      "最後依印刷店規格處理 CMYK、PDF/X 或其他交付格式。",
+      "First decide the output size, orientation and proportions, and confirm whether you need cropping, a background fill, or bleed.",
+      "Do the things that change the layout first, such as cropping, filling in the background, or rearranging text or objects.",
+      "Come back to this tool to check the effective DPI; if it's too low, upscale with Upscayl.",
+      "After upscaling, do a light denoise and sharpen, so you don't finish your fixes and then have them ruined by upscaling.",
+      "Zoom to 100% and check faces, edges, shadows and details.",
+      "Finally, handle CMYK, PDF/X or other delivery formats according to your print shop's specs.",
     ],
   };
+}
+
+// Turn the center preview image into an "after-printing sharpness" comparison:
+// left = the sharpness this size should have (the threshold DPI), right = your file's actual detail.
+// The amount of blur is based on "the threshold for this size" (which already includes viewing distance), so a large image at low DPI isn't wrongly judged as very blurry.
+function renderPrintSim(metrics) {
+  const src = state.image;
+  if (!src) return;
+
+  const availW = Math.max(1, els.previewFrame.clientWidth - 4);
+  const availH = Math.min(540, Math.round(window.innerHeight * 0.62)) || 540;
+  const natW = src.naturalWidth;
+  const natH = src.naturalHeight;
+  const scale = Math.min(availW / natW, availH / natH);
+  const dispW = Math.max(1, Math.round(natW * scale));
+  const dispH = Math.max(1, Math.round(natH * scale));
+  els.printSim.style.width = `${dispW}px`;
+  els.printSim.style.height = `${dispH}px`;
+
+  const target = metrics.print.dpiTargets.green;
+  const ratio = clamp(metrics.dpi.effective / target, 0, 1);
+
+  // The "your file's actual detail" layer uses the same <img>, applying a matching CSS blur based on how much resolution is missing (illustrative).
+  // We no longer redraw a large image onto canvas, to avoid a huge image looking worse after downscaling than the left <img>.
+  // When DPI is enough, blur = 0, so both layers are pixel-identical and you won't get a "looks blurrier even though it's fine" result.
+  els.simActual.src = els.previewImage.src;
+  const blurPx = ratio >= 0.999 ? 0 : clamp((1 - ratio) * dispW * 0.02, 0.4, 16);
+  els.simActual.style.filter = blurPx ? `blur(${blurPx}px)` : "none";
+
+  setSimSlider(Number(els.simSlider.value));
+  renderSimCaption(metrics, ratio);
+  els.printSim.hidden = false;
+  els.simCaption.hidden = false;
+  els.emptyState.style.display = "none";
+}
+
+function setSimSlider(value) {
+  const val = clamp(value, 0, 100);
+  els.previewImage.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
+  els.simDivider.style.left = `${val}%`;
+  // Whichever half gets bigger, that side's label is clear; the shrinking half fades out and disappears at the very end (this replaces the instructions).
+  els.simTagLeft.style.opacity = clamp((val / 100) * 1.6, 0, 1);
+  els.simTagRight.style.opacity = clamp(((100 - val) / 100) * 1.6, 0, 1);
+}
+
+function renderSimCaption(metrics, ratio) {
+  const eff = Math.round(metrics.dpi.effective);
+  const target = metrics.print.dpiTargets.green;
+  if (ratio >= 0.999) {
+    els.simCaption.textContent = `Your image is ${eff} DPI, which already meets the ${target} DPI this size needs — the print will look almost the same as on screen, no blur.`;
+  } else {
+    const pct = Math.round(ratio * 100);
+    els.simCaption.textContent = `Your image is ${eff} DPI, but this size really wants ${target} DPI — the print will be a bit softer than on screen, with only about ${pct}% of the detail left (illustrative only; the print shop has the final say).`;
+  }
+}
+
+function hidePrintSim() {
+  els.printSim.hidden = true;
+  els.simCaption.hidden = true;
+  els.emptyState.style.display = "block";
 }
 
 function renderImageInfo(metrics) {
@@ -587,85 +618,90 @@ function setMetric(valueEl, statusEl, value, status) {
   statusEl.className = status.level;
 }
 
-function statusForDpi(dpi, distance) {
-  const target = targets[distance];
-  if (dpi >= target.green) return { level: "green", label: "Sufficient" };
+function statusForDpi(dpi, target) {
+  if (dpi >= target.green) return { level: "green", label: "Enough" };
   if (dpi >= target.yellow) return { level: "yellow", label: "Borderline" };
   return { level: "red", label: "Too low" };
 }
 
 function statusForSharpness(sharpness) {
-  if (sharpness >= 10) return { level: "green", label: "Sharp" };
-  if (sharpness >= 5) return { level: "yellow", label: "Check it" };
-  return { level: "red", label: "Blurry" };
+  if (sharpness >= 10) return { level: "green", label: "Good to go" };
+  if (sharpness >= 5) return { level: "yellow", label: "Check closely" };
+  return { level: "red", label: "Sharpen it" };
+}
+
+// Big label: a plain-language take on whether the source itself is sharp (separate from resolution — even at enough DPI, an image that was shot or drawn blurry still looks soft)
+function sharpnessWord(sharpness) {
+  if (sharpness >= 10) return "Sharp";
+  if (sharpness >= 5) return "A bit soft";
+  return "Soft/blurry";
 }
 
 function statusForNoise(noise) {
-  if (noise.speckleRatio < 0.08) return { level: "green", label: "Clean" };
-  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "Acceptable" };
-  return { level: "red", label: "Noisy" };
+  if (noise.speckleRatio < 0.08) return { level: "green", label: "Good to go" };
+  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "Light denoise" };
+  return { level: "red", label: "Denoise it" };
 }
 
-function statusForColor(risk) {
-  if (risk.riskyRatio < 0.03 && risk.vividRatio < 0.12) return { level: "green", label: "Low risk" };
-  if (risk.riskyRatio < 0.1 && risk.vividRatio < 0.25) return { level: "yellow", label: "Proof it" };
-  return { level: "red", label: "High risk" };
+// Big label: a plain-language take on how much "AI noise / JPEG compression specks" there is (you can't see it in the comparison image, so it's judged separately)
+function noiseWord(noise) {
+  if (noise.speckleRatio < 0.08) return "Clean";
+  if (noise.speckleRatio < 0.18) return "Some noise";
+  return "Noisy";
 }
 
 function statusForBleed(bleed) {
   if (bleed >= 3) return { level: "green", label: "Standard" };
-  if (bleed > 0) return { level: "yellow", label: "A bit low" };
+  if (bleed > 0) return { level: "yellow", label: "A bit short" };
   return { level: "red", label: "No bleed" };
 }
 
 function renderAdvice(metrics) {
   const advice = [];
-  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
-  const colorStatus = statusForColor(metrics.colorRisk);
+  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
 
+  const dpiTargets = metrics.print.dpiTargets;
   if (dpiStatus.level === "red") {
-    advice.push("Effective DPI is too low. This is estimated from the output size; upscale with super-resolution first, or reduce the output size.");
+    advice.push("The effective DPI is too low. This is estimated from the output size; upscale with super-resolution first, or reduce the output size.");
   } else if (dpiStatus.level === "yellow") {
-    advice.push("Effective DPI is on the acceptable edge; make a 100% A4 crop proof to confirm details.");
+    advice.push("The effective DPI is right at the edge of acceptable; zoom to 100% yourself and check faces, text and edge details.");
+  } else if (metrics.dpi.effective > dpiTargets.green * 1.5) {
+    advice.push(`The effective DPI is already far above what this size needs (this size only needs about ${dpiTargets.green} DPI). The extra resolution won't make the print sharper — it just gives you room to scale up or down — so there's no need to chase higher; for example, taking a small image up to 1000 DPI doesn't help.`);
   } else {
-    advice.push("At the current output size, the effective DPI meets the basic threshold for this use.");
+    advice.push("At the current output size, the effective DPI meets the threshold for this use.");
   }
 
   if (sharpStatus.level !== "green") {
-    advice.push("Sharpness could still improve. For character faces, logo edges or key details, zoom in to inspect and apply light sharpening if needed.");
+    advice.push("There's still room to improve the sharpness; if it includes character faces, logo edges or important details, zoom in locally to check, and apply a light sharpen if needed.");
   }
 
   const noiseStatus = statusForNoise(metrics.noise);
   if (noiseStatus.level === "yellow") {
-    advice.push("Compression/noise is acceptable but improvable; apply light denoising before export. If Photopea's Reduce Noise does nothing, try Surface Blur or Median.");
+    advice.push("Compression/noise is acceptable but could still be improved; do a light denoise before output. If Photopea's Reduce Noise does nothing, try Surface Blur or Median instead.");
   } else if (noiseStatus.level === "red") {
-    advice.push("Compression/noise is high; denoise first or use a cleaner source image. If Photopea's Reduce Noise does nothing, make sure the layer is rasterized.");
+    advice.push("Compression/noise is on the high side; denoise first, or use a cleaner source image. If Photopea's Reduce Noise does nothing, first make sure the layer is rasterized.");
   }
 
-  if (colorStatus.level !== "green") {
-    advice.push("High-saturation RGB colors detected. This is only a CMYK color-shift risk estimate; for real conversion, let the printer handle it with an ICC profile and proof.");
-  } else {
-    advice.push("CMYK color-shift risk estimate is low, but final output should still handle CMYK to the printer's specs.");
-  }
+  advice.push("This tool doesn't judge color: screens are RGB and prints usually shift a little (bright blue, bright green and neon colors are the most obvious), so the print shop has the final say on actual color.");
 
   if (bleedStatus.level !== "green") {
-    advice.push("Bleed setting is too low; posters, stickers and business cards usually need at least 3 mm.");
+    advice.push("The bleed isn't enough; for common posters, stickers and business cards, at least 3 mm is recommended.");
   } else {
-    advice.push("Bleed value meets the common standard, but this only checks the value you set; confirm the background extends past the bleed frame.");
+    advice.push("The bleed value meets the common standard, but this only checks the bleed value you entered — you still need to make sure the background extends past the bleed line.");
   }
 
   if (metrics.print.isLogoAsset) {
-    advice.push("This image is marked as a Logo / icon / badge asset; for most print cases a high-res PNG/PDF is enough. Only consider vectorizing for very large output, long-term reuse, recoloring/splitting objects, or when the shop requires it.");
+    advice.push("This image is marked as a logo / icon / badge asset; for most print jobs a high-resolution PNG/PDF is enough. Only consider vectorizing for very large output, long-term repeated use, recoloring or splitting objects, or when the shop asks.");
   }
 
   if (metrics.print.needsEditableLayers) {
-    advice.push("This image is marked as needing editable layers; you can use Canva Magic Layers for a rough split, but the result still needs manual checking and cleanup.");
+    advice.push("This image is marked as needing editable layers; you could use Canva Magic layers for a rough split, but the result still needs manual review and tidying.");
   }
 
-  if (dpiStatus.level === "green" && colorStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
-    advice.push("All main metrics are green; next, make a 100% partial proof to confirm shadows, edges and color before printing for real.");
+  if (dpiStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
+    advice.push("All the main metrics are green; zoom to 100% and check shadows, edges and details — if it's fine, it's ready to print.");
   }
 
   els.adviceList.innerHTML = advice.map((item) => `<li>${item}</li>`).join("");
@@ -719,8 +755,8 @@ function renderActiveFix(fixes) {
 
   if (!fix) {
     els.fixStepLabel.textContent = "Step 1";
-    els.fixStepTitle.textContent = "Waiting for evaluation";
-    els.fixStepSummary.textContent = "After upload, the full guide for each step appears here.";
+    els.fixStepTitle.textContent = "Waiting for analysis";
+    els.fixStepSummary.textContent = "After you upload an image, the full walkthrough for each single step will show up here.";
     els.fixStepTrustNote.textContent = "Tool notes will appear here.";
     els.fixStepTrustNote.style.display = "block";
     els.fixStepList.innerHTML = "<li>Upload an AI image first.</li>";
@@ -740,7 +776,7 @@ function renderActiveFix(fixes) {
   els.fixStepTrustNote.style.display = fix.trustNote ? "block" : "none";
   els.fixStepList.innerHTML = fix.steps.map((step) => `<li>${step}</li>`).join("");
   renderExtraGuides(fix.extraGuides || []);
-  els.fixLink.textContent = fix.url ? `View: ${fix.linkText}` : "No tool needed";
+  els.fixLink.textContent = fix.url ? `View: ${fix.linkText}` : "No tool needed right now";
   els.fixLink.disabled = !fix.url;
 
   const previousFix = fixes[state.activeFixIndex - 1];
@@ -754,7 +790,7 @@ function renderActiveFix(fixes) {
 function formatTrustNote(note, versionHint = true) {
   if (!note) return "";
   if (!versionHint) return note;
-  return `${note} 不同版本或語言介面的選單名稱可能略有差異；如果找不到選項，可以截圖詢問 ChatGPT、Gemini，或對照官方文件確認。`;
+  return `${note} Menu names may differ slightly across versions or interface languages; if you can't find an option, take a screenshot and ask ChatGPT or Gemini, or check it against the official docs.`;
 }
 
 function shortFixTitle(title) {
@@ -770,7 +806,7 @@ function renderExtraGuides(guides) {
 
   els.fixExtraGuides.hidden = false;
   els.fixExtraGuides.innerHTML = [
-    "<p>依你的圖片類型選一個深入設定：</p>",
+    "<p>Pick one in-depth setup based on your image type:</p>",
     '<div class="guide-chip-list">',
     ...guides.map((guide, index) => `<button class="guide-chip" type="button" data-guide-index="${index}">${guide.label}</button>`),
     "</div>",
@@ -824,7 +860,7 @@ function openGuideModal(guide, trigger) {
   els.guideModalEyebrow.textContent = guide.eyebrow || "Guide";
   els.guideModalTitle.textContent = guide.title;
   els.guideModalSummary.textContent = guide.summary || "";
-  const versionNote = guide.versionHint === false ? "" : '<p class="guide-version-note">不同版本或語言介面的選單名稱可能略有差異；如果找不到選項，可以截圖詢問 ChatGPT、Gemini，或對照官方文件確認。</p>';
+  const versionNote = guide.versionHint === false ? "" : '<p class="guide-version-note">Menu names may differ slightly across versions or interface languages; if you can\'t find an option, take a screenshot and ask ChatGPT or Gemini, or check it against the official docs.</p>';
   els.guideModalContent.innerHTML = versionNote + guide.sections
     .map((section) => {
       const items = section.items.map((item) => `<li>${item}</li>`).join("");
@@ -848,46 +884,46 @@ function closeGuideModal() {
 function vectorTutorialGuide() {
   return {
     eyebrow: "Advanced SVG",
-    title: "我想轉向量：Inkscape SVG 教學",
-    summary: "這是進階教學，不會進入本工具評分。適合真的需要 SVG / PDF 向量交付、超大輸出、改色拆物件或長期重複使用的人。",
+    title: "I want to vectorize: Inkscape SVG tutorial",
+    summary: "This is an advanced tutorial and won't go into this tool's scoring. It's for people who genuinely need an SVG / PDF vector delivery, very large output, recoloring or splitting objects, or long-term repeated use.",
     sections: [
       {
-        title: "先判斷是否值得",
+        title: "First decide whether it's worth it",
         items: [
-          "適合：Logo、圖示、徽章、單色剪影、邊界清楚且色塊簡單的符號。",
-          "不適合：厚塗角色圖、照片、煙霧、光影、漸層很多或細碎材質很多的 AI 插畫。",
-          "如果只是一般海報、貼紙或帆布輸出，通常先用 Upscayl 放大成高解析 PNG/PDF 比轉向量更快。",
-          "如果轉完後邊緣變髒、尖角被磨圓、檔案很重，就回到高解析 PNG/PDF 路線，不要硬轉。",
+          "Good fit: logos, icons, badges, single-color silhouettes, and symbols with clear edges and simple color blocks.",
+          "Bad fit: heavily painted character art, photos, smoke, lighting, lots of gradients, or AI illustrations with lots of fine texture.",
+          "For a normal poster, sticker or canvas print, upscaling to a high-resolution PNG/PDF with Upscayl is usually faster than vectorizing.",
+          "If after converting the edges get dirty, sharp corners get rounded off, or the file is very heavy, go back to the high-resolution PNG/PDF route instead of forcing it.",
         ],
       },
       {
-        title: "下載與開啟圖片",
+        title: "Download and open the image",
         items: [
-          '到 <a href="https://inkscape.org/release/inkscape-1.4.4/" target="_blank" rel="noopener noreferrer">Inkscape 1.4.4 官方下載頁</a>。',
-          "Windows 使用者依序點 Windows > 64-bit > Windows Installer Package / msi。",
-          "MSI 是 Windows 安裝包格式，不是微星顯卡，照一般安裝流程Next即可。",
-          "開啟 Inkscape 後可點「瀏覽其他檔案...」或用「檔案（File）> 開啟（Open）」匯入圖片。",
-          "看到匯入 JPEG/PNG 設定時，通常維持預設並按確定即可。",
+          'Go to the <a href="https://inkscape.org/release/inkscape-1.4.4/" target="_blank" rel="noopener noreferrer">official Inkscape 1.4.4 download page</a>.',
+          "Windows users click Windows > 64-bit > Windows Installer Package / msi in order.",
+          "MSI is a Windows installer format, not an MSI graphics card; just follow the normal install steps and click Next.",
+          "After opening Inkscape, click \"Open other file...\" or use \"File > Open\" to import the image.",
+          "When you see the JPEG/PNG import settings, you can usually keep the defaults and click OK.",
         ],
       },
       {
-        title: "描圖起始設定",
+        title: "Trace starting settings",
         items: [
-          "選取圖片後，打開「路徑（Path）> 描摹點陣圖（Trace Bitmap）」。",
-          "黑白 Logo / 單色圖示：用「單次掃描（Single Scan）」與「亮度截斷（Brightness cutoff）」，臨界值先試 0.55。",
-          "彩色徽章 / 多色圖示：用「多次掃描（Multiple Scans）」與「顏色（Colors）」，掃描數先試 4 到 8 色。",
-          "背景是白底或棋盤底時，可嘗試「移除背景（Remove background）」；若效果不好，描完後再分離群組手動刪除。",
-          "預覽看起來乾淨再按「套用（Apply）」；如果預覽已經很髒，通常代表Do not force-convert。",
+          "With the image selected, open \"Path > Trace Bitmap\".",
+          "Black-and-white logo / single-color icon: use \"Single Scan\" with \"Brightness cutoff\", and start the threshold at 0.55.",
+          "Color badge / multi-color icon: use \"Multiple Scans\" with \"Colors\", and start with 4 to 8 colors.",
+          "When the background is white or a checkerboard, try \"Remove background\"; if it doesn't work well, ungroup after tracing and delete it by hand.",
+          "When the preview looks clean, click \"Apply\"; if the preview already looks dirty, it usually means it's not a good fit for forcing a conversion.",
         ],
       },
       {
-        title: "清理與輸出",
+        title: "Clean up and export",
         items: [
-          "套用後把向量圖拖開，確認下面是否還有原始 JPG、棋盤背景或浮水印。",
-          "如果背景和主圖包在一起，先用「物件（Object）> 解散群組（Ungroup）」再刪除多餘物件。",
-          "放大檢查尖角、細線、孔洞、顏色分區與浮水印殘留。",
-          "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF，或請店家代轉 AI/PDF。",
-          "轉完 SVG 不需要回本工具評分；請在 Inkscape / Illustrator 放大檢查，或交由印刷店確認交付格式與輸出規格。",
+          "After applying, drag the vector aside and check whether the original JPG, checkerboard background or watermark is still underneath.",
+          "If the background and the main subject are grouped together, use \"Object > Ungroup\" first, then delete the extra objects.",
+          "Zoom in to check sharp corners, thin lines, holes, color regions and any leftover watermark.",
+          "Use \"File > Save As\" to save as SVG; to hand off to a print shop, you can save as PDF, or ask the shop to convert to AI/PDF for you.",
+          "A converted SVG doesn't need this tool's scoring; check it by zooming in within Inkscape / Illustrator, or let the print shop confirm the delivery format and output specs.",
         ],
       },
     ],
@@ -903,76 +939,37 @@ function confirmOpenTool() {
   }
 }
 
-async function copyShopMessage() {
-  if (!state.metrics) return;
-  const text = buildShopMessage(state.metrics);
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-  } else {
-    fallbackCopyText(text);
-  }
-  const original = els.copyShopMessage.textContent;
-  els.copyShopMessage.textContent = "Copied";
-  window.setTimeout(() => {
-    els.copyShopMessage.textContent = original;
-  }, 1400);
-}
-
-function fallbackCopyText(text) {
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
-}
-
-function buildShopMessage(metrics) {
-  return [
-    `你好，我想印 ${getUseLabel()}。`,
-    `檔案像素為 ${metrics.pixelWidth} x ${metrics.pixelHeight} px，Target output尺寸為 ${metrics.print.widthMm} x ${metrics.print.heightMm} mm，目前依尺寸估算的有效 DPI 約 ${Math.round(metrics.dpi.effective)}。`,
-    `目前設定出血 ${metrics.print.bleedMm} mm，但仍需確認背景是否有延伸到出血區。`,
-    metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材；若直接輸出不夠乾淨，請協助判斷適合用高解析 PNG/PDF，或是否需要另外轉成貴店可印格式。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
-    metrics.print.needsEditableLayers ? "我也想嘗試將圖片拆成可編輯圖層，方便後續調整文字、物件或版面。" : "目前沒有特別要求拆成可編輯圖層。",
-    `CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，請協助轉檔或告知規格。`,
-    "請問這樣適合送印嗎？如果需要調整解析度、出血、裁切或轉色，也請告訴我。",
-  ].join("\n");
-}
-
 function getNoisePreset(noise) {
   if (noise.speckleRatio < 0.1) {
     return {
-      label: "輕度",
+      label: "light",
       strength: 4,
       protectDetail: 45,
       colorNoise: 10,
-      note: "目前屬於可接受噪點，先用輕度設定，重點是保留材質和細線。",
+      note: "The noise is currently acceptable, so use a light setting; the priority is keeping the texture and thin lines.",
     };
   }
   if (noise.speckleRatio < 0.18) {
     return {
-      label: "中度",
+      label: "medium",
       strength: 6,
       protectDetail: 35,
       colorNoise: 15,
-      note: "噪點已經會影響暗部，先用中度設定，再用預覽確認細節沒有被抹平。",
+      note: "The noise is already affecting the shadows, so use a medium setting, then use the preview to make sure details aren't smeared away.",
     };
   }
   return {
-    label: "偏重",
+    label: "heavy",
     strength: 8,
     protectDetail: 25,
     colorNoise: 20,
-    note: "噪點偏高，但仍不建議一次拉滿；先處理髒點，再檢查邊緣和文字。",
+    note: "The noise is on the high side, but still don't max it out in one go; deal with the specks first, then check edges and text.",
   };
 }
 
 function getUpscalePreset(metrics) {
   const currentDpi = metrics.dpi.effective;
-  const target = targets[metrics.print.distance];
+  const target = metrics.print.dpiTargets;
   const targetDpi = target.green;
   const needed = targetDpi / Math.max(currentDpi, 1);
   const scale = needed <= 1 ? 1 : needed <= 2 ? 2 : needed <= 4 ? 4 : 8;
@@ -980,13 +977,13 @@ function getUpscalePreset(metrics) {
   const outputWidth = metrics.pixelWidth * scale;
   const outputHeight = metrics.pixelHeight * scale;
 
-  let caution = "2x 通常最自然，細節比較不容易出現 AI 放大痕跡。";
+  let caution = "2x is usually the most natural and less likely to show AI-upscaling artifacts in the detail.";
   if (scale === 4) {
-    caution = "4x 可補足較大的 DPI 缺口，但請檢查臉部、文字、邊緣是否出現假細節。";
+    caution = "4x can make up a bigger DPI gap, but check faces, text and edges for fake detail.";
   } else if (scale === 8) {
-    caution = "8x 很容易產生假細節或處理失敗，建議先確認是否能降低輸出尺寸；必要時才使用 8x。";
+    caution = "8x easily produces fake detail or fails outright; see if you can reduce the output size first, and only use 8x when you have to.";
   } else if (scale === 1) {
-    caution = "目前 DPI 已接近目標，通常不需要放大；若只是想更穩，可先做 100% 局部打樣。";
+    caution = "The DPI is already close to the target, so you usually don't need to upscale; if you just want to be safer, zoom to 100% and check it yourself.";
   }
 
   return {
@@ -1006,19 +1003,19 @@ function chooseFixPlan(metrics) {
   const primaryFix = actionable[0] || null;
 
   if (fixes.length === 0) {
-    const proof = proofFix();
+    const ok = finalCheckFix();
     return {
-      title: "Ready for proofing",
-      summary: "Main risks are below the warning line; next, make a 100% partial proof instead of applying more fixes.",
-      steps: [`${proof.title}：${proof.summary}`],
-      fixes: [proof],
-      primaryFix: proof,
+      title: "Ready to print",
+      summary: "The main risks are all below the warning line; before printing, just zoom in and check the key areas yourself.",
+      steps: [`${ok.title}：${ok.summary}`],
+      fixes: [ok],
+      primaryFix: ok,
     };
   }
 
   return {
     title: "Suggested fix order",
-    summary: "Listed in the suggested order. Do steps that change layout or structure first, then upscaling and detail fixes.",
+    summary: "The following is in the suggested order. Do the steps that change the layout or structure first, then upscaling and detail fixes.",
     steps: fixes.map((fix) => `${fix.title}：${fix.summary}`),
     fixes,
     primaryFix,
@@ -1026,9 +1023,8 @@ function chooseFixPlan(metrics) {
 }
 
 function collectFixes(metrics) {
-  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
+  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const colorStatus = statusForColor(metrics.colorRisk);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
   const fixes = [];
@@ -1038,7 +1034,6 @@ function collectFixes(metrics) {
   if (dpiStatus.level === "red" || dpiStatus.level === "yellow") fixes.push(upscaleFix(metrics));
   if (sharpStatus.level === "red") fixes.push(sharpenFix());
   if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
-  if (colorStatus.level !== "green") fixes.push(colorFix());
 
   return fixes;
 }
@@ -1046,31 +1041,31 @@ function collectFixes(metrics) {
 function upscaleFix(metrics) {
   const upscale = getUpscalePreset(metrics);
   const isLogoAsset = metrics.print.isLogoAsset;
-  const title = "Fix resolution: download Upscayl desktop";
-  const summary = `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。${
-    isLogoAsset ? " 這是多數 Logo / 徽章送印情境最省事的主路線；向量化可留到需要超大輸出或改色拆物件時再做。" : ""
+  const title = "Fix resolution: download the Upscayl desktop app";
+  const summary = `The current effective DPI is about ${upscale.currentDpi}, and this use wants around ${upscale.targetDpi} DPI. Start with a ${upscale.scale}x upscale, which should reach about ${upscale.expectedDpi} DPI.${
+    isLogoAsset ? " For most logo / badge print jobs this is the simplest main route; you can leave vectorizing for when you need very large output or to recolor / split objects." : ""
   }`;
   const trustNote = isLogoAsset
-    ? "多數 Logo / 圖示若只是海報、貼紙或招牌輸出，高解析 PNG/PDF 通常已經足夠。只有需要長期重複使用、任意改色、拆物件或店家明確要求向量檔時，才需要另外做向量化。Upscayl 是免費開源的 AI 圖片放大桌面軟體，適合先把低解析圖拉到可送印門檻。"
-    : "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。";
+    ? "For most logos / icons, if it's just a poster, sticker or signage output, a high-resolution PNG/PDF is usually enough. You only need to vectorize separately when you need long-term repeated use, free recoloring, splitting objects, or the shop explicitly asks for a vector file. Upscayl is a free, open-source AI image-upscaling desktop app, good for getting a low-resolution image up to the printable threshold first."
+    : "Upscayl is a free, open-source AI image-upscaling desktop app; images are processed on your own computer, and it's good for getting a low-resolution AI image up close to print requirements first. Speed depends on your computer's CPU/GPU, so if your computer is on the slow side, use 2x first.";
   const steps = [
-    "打開 Upscayl 下載頁，下載 Windows 桌面版。",
-    "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
-    "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
-    "匯入原圖。",
-    `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
+    "Open the Upscayl download page and download the Windows desktop app.",
+    "After installing, open Upscayl on your computer; you don't need to use the online Dashboard.",
+    "If you see credits, Start free trial or Upgrade on screen, you're on the cloud version — go back to the download page and get the desktop app instead.",
+    "Import the original image.",
+    `For Resolution Scale, start with ${upscale.scale}x. The output should be about ${upscale.outputWidth} x ${upscale.outputHeight} px.`,
     upscale.caution,
-    "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
-    "Output Format 選 PNG，避免用低品質 JPG。",
-    "輸出後請放大看臉、邊緣、線條和暗部，不要只看縮圖。",
-    "回到本工具，點Re-upload fixed version檢查分數。",
+    "For Model, start with Upscayl Standard; for character faces you can also try another model and compare the detail.",
+    "Set Output Format to PNG; avoid low-quality JPG.",
+    "After exporting, zoom in to check faces, edges, lines and shadows — don't just look at the thumbnail.",
+    "Come back to this tool and click re-upload the fixed version to check the score.",
   ];
 
   return {
     title,
     summary,
     trustNote,
-    linkText: "Download free desktop version",
+    linkText: "Download the free desktop app",
     url: "https://upscayl.io/",
     steps,
   };
@@ -1078,175 +1073,175 @@ function upscaleFix(metrics) {
 
 function bleedFix() {
   return {
-    title: "Add bleed: adjust canvas in Photopea",
-    summary: "出血不足會讓裁切後邊緣露白。先把畫布加大並保留重要內容在安全範圍內。",
-    trustNote: "Photopea 是瀏覽器上的影像編輯器，操作方式接近 Photoshop，適合做裁切、畫布尺寸、出血、簡單銳化與輸出。正式 CMYK 仍建議依印刷廠規格處理。",
-    linkText: "Open Photopea",
+    title: "Add bleed: adjust the canvas in Photopea",
+    summary: "Too little bleed leaves a white edge after trimming. Enlarge the canvas first and keep important content within the safe area.",
+    trustNote: "Photopea is a browser-based image editor that works much like Photoshop, good for cropping, canvas size, bleed, simple sharpening and export. For proper CMYK, still follow your print shop's specs.",
+    linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
-      "在 Photopea 使用 File > Open 開啟圖片。",
-      "用 Image > Canvas Size 將畫布左右上下各加 3 mm。",
-      "把背景或圖像延伸到出血區，文字和 Logo 不要貼邊。",
-      "匯出 PNG 或 PDF 後回來Re-evaluate。",
+      "In Photopea, use File > Open to open the image.",
+      "Use Image > Canvas Size to add 3 mm on each side (left, right, top, bottom).",
+      "Extend the background or image into the bleed area; keep text and logos away from the edge.",
+      "Export a PNG or PDF, then come back and re-check.",
     ],
   };
 }
 
 function sharpenFix() {
   return {
-    title: "Reduce blur: sharpen in Photopea",
-    summary: "畫面偏糊時，印出來會更明顯。先做輕度銳化，並用 100% 局部檢查臉部、線條與文字。",
-    trustNote: "Photopea 可直接在瀏覽器做基礎修圖，不需要安裝大型軟體。銳化只能改善邊緣觀感，不能真正補回不存在的細節。",
-    linkText: "Open Photopea",
+    title: "Fix blur: sharpen in Photopea",
+    summary: "When the image is soft, it shows up even more in print. Do a light sharpen first, and check faces, lines and text at 100%.",
+    trustNote: "Photopea lets you do basic retouching right in the browser, with no big software to install. Sharpening can only improve how the edges look — it can't truly bring back detail that isn't there.",
+    linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
-      "在 Photopea 開啟圖片。",
-      "使用 Filter > Sharpen > Smart Sharpen 或 Sharpen。",
-      "銳化不要過量，避免邊緣出現白邊或髒點。",
-      "匯出 PNG 後回來Re-evaluate。",
+      "Open the image in Photopea.",
+      "Use Filter > Sharpen > Smart Sharpen or Sharpen.",
+      "Don't over-sharpen, to avoid white halos or specks on the edges.",
+      "Export a PNG, then come back and re-check.",
     ],
   };
 }
 
 function canvaFix() {
   return {
-    title: "Split into editable layers: Canva Magic Layers",
-    summary: "先用 Canva 魔法圖層做粗略分層，再手動整理物件、文字與版面。",
-    trustNote: "Canva 魔法圖層適合把圖片粗略拆成可編輯元素，方便後續重排、替換或微調。它不是專業向量化，也不保證能完美分離所有物件；複雜厚塗、煙霧、髮絲或細碎光效仍需要人工檢查。",
-    linkText: "Open Canva",
+    title: "Split into editable layers: use Canva Magic layers",
+    summary: "Use Canva Magic layers for a rough split first, then manually tidy up the objects, text and layout.",
+    trustNote: "Canva Magic layers are good for roughly splitting an image into editable elements, making it easier to rearrange, replace or tweak afterward. It isn't professional vectorizing and won't perfectly separate every object; complex heavy painting, smoke, hair strands or fine lighting still need manual review.",
+    linkText: "Go to Canva",
     url: "https://www.canva.com/",
     steps: [
-      "打開 Canva 並建立或開啟一個設計。",
-      "上傳圖片並放到畫布上。",
-      "點選圖片。",
-      "點選編輯圖片或 Edit image。",
-      "在工具中選擇魔法圖層。",
-      "等待 Canva 粗略拆分圖層。",
-      "檢查每個圖層是否拆得合理，必要時手動刪除、重排或修正。",
-      "若要印刷，最後仍需確認尺寸、出血、解析度與印刷店輸出規格。",
+      "Open Canva and create or open a design.",
+      "Upload the image and place it on the canvas.",
+      "Click the image.",
+      "Click Edit image.",
+      "In the tools, choose Magic layers.",
+      "Wait for Canva to roughly split the layers.",
+      "Check whether each layer was split sensibly, and manually delete, rearrange or fix as needed.",
+      "If it's for print, you still need to confirm the size, bleed, resolution and the print shop's output specs at the end.",
     ],
   };
 }
 
 function inkscapeFix() {
   return {
-    title: "Vectorize an icon: Inkscape Trace Bitmap",
-    summary: "Logo / 圖示 / 徽章若邊界清楚、色塊簡單，可先用 Inkscape 免費轉成 SVG。",
-    trustNote: "Inkscape 是免費、開源的向量繪圖軟體。開源代表程式原始碼公開，社群可以檢查與改進，比來路不明的轉檔網站更透明；仍建議只從 inkscape.org 官方頁下載。它內建 Trace Bitmap，可把點陣圖描成 SVG，適合 Logo、剪影、徽章、圖示與扁平素材；不適合厚塗角色圖、照片或複雜漸層。",
-    linkText: "Open Inkscape 1.4.4 download page",
+    title: "Vectorize the icon: use Inkscape Trace Bitmap",
+    summary: "If a logo / icon / badge has clear edges and simple color blocks, you can convert it to SVG for free in Inkscape first.",
+    trustNote: "Inkscape is free, open-source vector drawing software. Open-source means the source code is public, so the community can inspect and improve it — more transparent than a sketchy file-conversion website; still, only download from the official inkscape.org page. Its built-in Trace Bitmap can trace a raster image into SVG, good for logos, silhouettes, badges, icons and flat assets; not good for heavily painted character art, photos or complex gradients.",
+    linkText: "Go to the Inkscape 1.4.4 download page",
     url: "https://inkscape.org/release/inkscape-1.4.4/",
     steps: [
-      "下載 Inkscape：選 Windows > 64-bit > Windows Installer Package / msi，安裝後開啟。",
-      "如果看到開始畫面，切到「開始創作」，選「瀏覽其他檔案...」開圖片。",
-      "如果已進入空白畫布，就用「檔案（File）> 匯入（Import）」把圖片放進畫布。",
-      "先點一下圖片，確認圖片外框有選取框；如果沒選到，Trace Bitmap 可能不會作用。",
-      "從上方選單選「路徑（Path）> 描摹點陣圖（Trace Bitmap）」。",
-      "依圖片類型點下方深入設定：黑白 Logo、彩色徽章，或結果檢查。",
-      "按「預覽（Preview）」先看結果；邊緣乾淨再按「套用（Apply）」。",
-        "套用後把上層物件拖到旁邊檢查，確認哪個是原圖、哪個是向量結果。",
-        "如果棋盤背景或浮水印也被描出來，可先分離/解散群組（Ungroup），再選取多餘背景物件刪除。",
-        "用「檔案（File）> 另存新檔（Save As）」存成 SVG；若要交給印刷店，可另存 PDF。",
-        "如果向量結果很髒、檔案很重或和原圖差很多，改用高解析 PNG/PDF，不要硬轉。",
+      "Download Inkscape: choose Windows > 64-bit > Windows Installer Package / msi, install it, and open it.",
+      "If you see the start screen, switch to \"Start creating\" and choose \"Open other file...\" to open the image.",
+      "If you're already on a blank canvas, use \"File > Import\" to place the image on the canvas.",
+      "Click the image once and confirm it has a selection box; if it isn't selected, Trace Bitmap may not work.",
+      "From the top menu choose \"Path > Trace Bitmap\".",
+      "Click the in-depth setup below based on your image type: black-and-white logo, color badge, or result check.",
+      "Click \"Preview\" to see the result first; when the edges are clean, click \"Apply\".",
+        "After applying, drag the top object aside and check which one is the original and which is the vector result.",
+        "If the checkerboard background or watermark also got traced, ungroup first, then select and delete the extra background objects.",
+        "Use \"File > Save As\" to save as SVG; to hand off to a print shop, you can save as PDF.",
+        "If the vector result is very dirty, the file is very heavy, or it looks very different from the original, switch to high-resolution PNG/PDF instead of forcing it.",
     ],
     extraGuides: [
       {
-        label: "黑白 Logo / 單色圖示",
+        label: "Black-and-white logo / single-color icon",
         eyebrow: "Trace Bitmap",
-        title: "黑白 Logo 或單色圖示怎麼設？",
-        summary: "適合黑白商標、剪影、單色符號、邊界清楚的圖示。目標是取得乾淨外框，不追求保留原圖所有細節。",
+        title: "How to set up a black-and-white logo or single-color icon?",
+        summary: "Good for black-and-white marks, silhouettes, single-color symbols and icons with clear edges. The goal is a clean outline, not preserving every detail of the original.",
         sections: [
           {
-            title: "建議設定",
+            title: "Suggested settings",
             items: [
-              "在「描摹點陣圖（Trace Bitmap）」裡選「單次掃描（Single Scan）」。",
-              "模式先用「亮度截斷（Brightness cutoff）」。",
-              "「臨界值（Threshold）」先從 0.55 試；太瘦就提高到 0.60～0.65，太粗或黑成一片就降到 0.45～0.50。",
-              "背景是白底時可勾「移除背景（Remove background）」，但不是必須；描完後也可以分離/解散群組再刪背景物件。",
-              "邊緣鋸齒太明顯時，開「平滑（Smooth）」；節點太多時，再試「最佳化（Optimize）」。",
+              "In \"Trace Bitmap\", choose \"Single Scan\".",
+              "For mode, start with \"Brightness cutoff\".",
+              "For \"Threshold\", start at 0.55; if it's too thin, raise it to 0.60–0.65, and if it's too thick or goes solid black, lower it to 0.45–0.50.",
+              "When the background is white, you can tick \"Remove background\", but it's not required; you can also ungroup after tracing and delete the background object.",
+              "When the edges are too jagged, turn on \"Smooth\"; when there are too many nodes, try \"Optimize\".",
             ],
           },
           {
-            title: "怎麼判斷成功",
+            title: "How to tell it worked",
             items: [
-              "預覽看起來像一個乾淨剪影，邊緣沒有大量碎屑。",
-              "小洞、尖角或細線沒有被吃掉。",
-              "套用後拖開檢查，刪掉原圖只保留向量也能看懂圖案。",
+              "The preview looks like a clean silhouette, with no lots of debris on the edges.",
+              "Small holes, sharp corners or thin lines weren't eaten away.",
+              "After applying, drag it aside, delete the original, and the pattern still makes sense with only the vector left.",
             ],
           },
           {
-            title: "不成功時",
+            title: "When it doesn't work",
             items: [
-              "如果 Logo 原圖太糊，先換更清楚的來源圖，不要先放大再硬描。",
-              "如果邊緣髒點很多，先在 Photopea 清白底或去噪，再回 Inkscape 描摹。",
-              "如果只有背景被一起描出來，先試分離/解散群組後刪背景，不一定要重新描。",
-              "如果有大量漸層、陰影或材質，這張圖可能不適合單色向量化。",
+              "If the original logo is too blurry, switch to a clearer source first; don't upscale and then force a trace.",
+              "If there are lots of edge specks, clean the white background or denoise in Photopea first, then trace in Inkscape.",
+              "If only the background got traced along with it, try ungrouping and deleting the background first; you don't necessarily have to re-trace.",
+              "If there are lots of gradients, shadows or texture, this image may not be a good fit for single-color vectorizing.",
             ],
           },
         ],
       },
       {
-        label: "彩色徽章 / 多色圖示",
+        label: "Color badge / multi-color icon",
         eyebrow: "Trace Bitmap",
-        title: "彩色徽章或多色圖示怎麼設？",
-        summary: "適合色塊清楚、顏色不多的徽章、遊戲圖示、UI icon。重點是先減少顏色，避免 SVG 變成一堆碎色塊。",
+        title: "How to set up a color badge or multi-color icon?",
+        summary: "Good for badges, game icons and UI icons with clear color blocks and not too many colors. The key is to reduce colors first so the SVG doesn't turn into a pile of tiny color fragments.",
         sections: [
           {
-            title: "建議設定",
+            title: "Suggested settings",
             items: [
-              "選「多重掃描（Multiple Scans）」或「顏色（Colors）」模式。",
-              "「掃描數（Scans）」先試 8；顏色不夠再試 12 或 16。",
-              "不要一開始就開太多顏色，顏色越多，檔案越重，也越難整理。",
-              "如果有白底、棋盤格或透明底，可試「移除背景（Remove background）」，但也可以套用後分離/解散群組再刪背景色塊。",
-              "邊緣太破碎時，試著開「平滑（Smooth）」或「最佳化（Optimize）」。",
+              "Choose \"Multiple Scans\" or \"Colors\" mode.",
+              "For \"Scans\", start with 8; if there aren't enough colors, try 12 or 16.",
+              "Don't open too many colors right away — the more colors, the heavier the file and the harder it is to tidy.",
+              "If there's a white, checkerboard or transparent background, try \"Remove background\"; or apply first, then ungroup and delete the background color blocks.",
+              "When the edges are too fragmented, try turning on \"Smooth\" or \"Optimize\".",
             ],
           },
           {
-            title: "怎麼判斷成功",
+            title: "How to tell it worked",
             items: [
-              "主要形狀清楚，顏色分區看起來像設計稿，而不是碎玻璃感。",
-              "放大看邊緣不髒，色塊沒有太多不必要的小碎片。",
-              "檔案仍能流暢移動與儲存；如果卡頓明顯，通常代表節點太多。",
+              "The main shapes are clear and the color regions look like the design draft, not like shattered glass.",
+              "Zoom in and the edges aren't dirty, with no excessive tiny fragments in the color blocks.",
+              "The file still moves and saves smoothly; obvious lag usually means too many nodes.",
             ],
           },
           {
-            title: "不成功時",
+            title: "When it doesn't work",
             items: [
-              "把掃描數降低，先保留主色塊，不要追求完全像原圖。",
-              "如果棋盤格背景被描進去，先分離/解散群組，再選取背景方塊或浮水印色塊刪除。",
-              "如果徽章有厚重金屬材質、光暈或煙霧，改輸出高解析 PNG/PDF 會比較自然。",
-              "如果印刷店只是需要可印檔，不一定需要 SVG；可以附Check report請店家代轉 PDF。",
+              "Lower the scan count, keep the main color blocks first, and don't chase a perfect match to the original.",
+              "If the checkerboard background got traced in, ungroup first, then select and delete the background squares or watermark color blocks.",
+              "If the badge has heavy metallic texture, glow or smoke, exporting a high-resolution PNG/PDF looks more natural.",
+              "If the print shop just needs a printable file, you don't necessarily need an SVG; you can hand the original file to the shop and ask them to convert it to PDF.",
             ],
           },
         ],
       },
       {
-        label: "結果檢查 / 是否還要放大",
+        label: "Result check / whether to still upscale",
         eyebrow: "Vector Check",
-        title: "向量化後怎麼判斷是否還要修解析度？",
-        summary: "成功向量化後，Logo 或圖示本身通常不再看 DPI；但混合點陣素材時，還是要檢查那些點陣部分。",
+        title: "After vectorizing, how do you tell whether resolution still needs fixing?",
+        summary: "After a successful vectorization, the logo or icon itself usually no longer cares about DPI; but when raster assets are mixed in, you still need to check those raster parts.",
         sections: [
           {
-            title: "向量化成功時",
+            title: "When vectorizing succeeds",
             items: [
-              "把向量結果拖開後，刪掉原始點陣圖，只留向量仍然清楚。",
-              "存成 SVG 或 PDF 後重新打開，邊緣仍然乾淨。",
-              "這種純向量 Logo / 圖示本身通常不需要再用 Upscayl 放大。",
+              "After dragging the vector result aside, delete the original raster image, and the vector alone is still clear.",
+              "After saving as SVG or PDF and reopening, the edges are still clean.",
+              "A pure-vector logo / icon like this usually doesn't need upscaling with Upscayl.",
             ],
           },
           {
-            title: "仍需要檢查 DPI 的情況",
+            title: "Cases where you still need to check DPI",
             items: [
-              "設計裡還有點陣背景、角色、照片、材質、陰影或 AI 厚塗圖。",
-              "你最後不是交 SVG/PDF，而是輸出 PNG 或 JPG。",
-              "向量化結果失敗，最後改用高解析 PNG/PDF。",
+              "The design still has a raster background, character, photo, texture, shadow or AI heavy-painted image.",
+              "In the end you're not delivering SVG/PDF, but exporting PNG or JPG.",
+              "The vectorization failed and you ended up using high-resolution PNG/PDF instead.",
             ],
           },
           {
-            title: "送印前最後確認",
+            title: "Final check before printing",
             items: [
-              "把純向量圖另存 SVG；若要給印刷店，可另存 PDF。",
-              "如果包含點陣圖，回本工具重新上傳輸出檔，確認有效 DPI。",
-              "大量印刷前仍建議先做小樣或局部 100% 打樣。",
+              "Save the pure-vector image as SVG; to give it to a print shop, you can save as PDF.",
+              "If it includes raster images, re-upload the output file to this tool and confirm the effective DPI.",
+              "Before a large print run, zoom to 100% yourself and check the key areas.",
             ],
           },
         ],
@@ -1258,137 +1253,51 @@ function inkscapeFix() {
 function noiseFix(metrics) {
   const preset = getNoisePreset(metrics.noise);
   return {
-    title: "Reduce noise: Photopea backup denoise flow",
-    summary: `目前壓縮/噪點建議用${preset.label}降噪。Reduce Noise 若沒反應，通常是沒有選到圖片圖層；也可改用 Surface Blur 或 Median。`,
-    trustNote: "Photopea 的濾鏡需要套在一般點陣圖層上；如果圖層是文字、形狀、智慧物件或特殊圖層，可能要先 Rasterize。降噪只能降低髒點和壓縮感，不能補回缺失細節。",
-    linkText: "Open Photopea",
+    title: "Fix noise: use Photopea's fallback denoise flow",
+    summary: `For the current compression/noise, a ${preset.label} denoise is recommended. If Reduce Noise does nothing, it usually means no image layer is selected; you can also try Surface Blur or Median.`,
+    trustNote: "Photopea's filters need to be applied to a normal raster layer; if the layer is text, a shape, a smart object or a special layer, you may need to Rasterize it first. Denoising can only reduce the specks and the compressed look — it can't bring back missing detail.",
+    linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
-      "在 Photopea 開啟圖片。",
-      "先在右側 Layers 面板點選圖片圖層；如果沒有選到圖層，濾鏡可能看起來沒反應。",
-      "選 Filter > Noise > Reduce Noise，先確認 Preview 有勾選。",
-      `建議起始值：Strength ${preset.strength}、Protect Detail ${preset.protectDetail}%、Reduce Color Noise ${preset.colorNoise}%。`,
+      "Open the image in Photopea.",
+      "First click the image layer in the Layers panel on the right; if no layer is selected, the filter may look like it does nothing.",
+      "Choose Filter > Noise > Reduce Noise, and first make sure Preview is checked.",
+      `Suggested starting values: Strength ${preset.strength}, Protect Detail ${preset.protectDetail}%, Reduce Color Noise ${preset.colorNoise}%.`,
       preset.note,
-      "如果畫面變太塑膠或金線/碎片消失，把 Strength 降 1-2，或把 Protect Detail 提高 10%。",
-      "如果雜點還很明顯，把 Strength 加 1，但不要一次拉到最高。",
-      "Reduce Noise 仍無法使用時，改試 Filter > Blur > Surface Blur，或 Filter > Noise > Median，Median 從 1 或 2 開始。",
-      "匯出 PNG，避免再次存成低品質 JPG。",
-      "回到本工具，Re-upload fixed version檢查分數。",
-    ],
-  };
-}
-
-function colorFix() {
-  return {
-    title: "Check color shift: CMYK preview in Photopea",
-    summary: "高飽和 RGB 顏色轉印刷時可能變暗或變灰。先做 CMYK 預覽，再決定是否交給印刷店轉色。",
-    trustNote: "Photopea 可用來初步觀察 RGB 轉印刷色的落差，但不同印刷廠會使用不同 ICC Profile、紙材與油墨。這一步是風險預覽，不是保證色準。",
-    linkText: "Open Photopea",
-    url: "https://www.photopea.com/",
-    steps: [
-      "在 Photopea 開啟圖片。",
-      "使用 Image > Mode 或色彩相關功能查看 CMYK/印刷預覽。",
-      "特別檢查亮藍、亮綠、紫色與螢光感紅色。",
-      "正式輸出前，仍建議依印刷廠 ICC Profile 處理。",
+      "If the image gets too plastic or thin gold lines / fragments disappear, lower Strength by 1-2, or raise Protect Detail by 10%.",
+      "If the specks are still obvious, raise Strength by 1, but don't crank it to the max in one go.",
+      "If Reduce Noise still isn't usable, try Filter > Blur > Surface Blur, or Filter > Noise > Median, starting Median at 1 or 2.",
+      "Export a PNG; avoid re-saving as a low-quality JPG.",
+      "Come back to this tool and re-upload the fixed version to check the score.",
     ],
   };
 }
 
 function textFix() {
   return {
-    title: "Re-typeset small text: Photopea or Illustrator",
-    summary: "圖片內的小字最容易印糊。若這是正式海報或名片，最好把文字重新排成向量或高解析文字圖層。",
-    trustNote: "AI 圖裡的小字常常不是乾淨字型，放大後也容易糊。用編輯工具重新排文字，通常比修原圖更可靠。",
-    linkText: "Open Photopea",
+    title: "Redo small text: use Photopea or Illustrator",
+    summary: "Small text inside an image is the easiest thing to print blurry. If this is a real poster or business card, it's best to re-typeset the text as vector or a high-resolution text layer.",
+    trustNote: "Small text in AI images is often not a clean typeface and easily goes blurry when scaled up. Re-typesetting the text in an editor is usually more reliable than fixing the original.",
+    linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
-      "開啟原圖作為底圖。",
-      "用文字工具重新打上小字，不要直接依賴 AI 圖裡的字。",
-      "文字離裁切邊至少保留安全距離。",
-      "匯出後回到本工具Re-evaluate。",
+      "Open the original image as the base layer.",
+      "Use the text tool to re-type the small text; don't just rely on the text in the AI image.",
+      "Keep the text at least a safe distance from the trim edge.",
+      "After exporting, come back to this tool and re-check.",
     ],
   };
 }
 
-function proofFix() {
+function finalCheckFix() {
   return {
-    title: "Ready for proofing",
-    summary: "主要風險都已低於警戒線。Next建議產生 100% 局部打樣，確認細節和色彩。",
-    trustNote: "數位評估只能預測風險，不能取代實體打樣。正式大量印刷前，最好先印 100% 局部小樣確認細節、暗部與色彩。",
-    linkText: "View proofing notes",
-    url: "https://helpx.adobe.com/tw/acrobat/using/printing-pdfs-custom-sizes.html",
+    title: "Ready to print: just zoom in and check yourself",
+    summary: "The main risks all pass. Before printing, just put the image at 100% and look over the key areas once.",
+    trustNote: "A digital check can only estimate risk — it doesn't guarantee the print result; the final output still depends on the print shop's specs and the actual run.",
     steps: [
-      "挑選畫面中最重要的區域，例如臉、Logo、小字或暗部。",
-      "用實際尺寸裁切一塊 A4 可印範圍。",
-      "先印小樣確認細節，再印完整海報。",
-      "送印時附上本工具的Check report。",
+      "Zoom the image to 100% and check faces, text, logos, edges and shadows.",
+      "Make sure the background extends into the bleed area and important content isn't against the edge.",
+      "If it's all fine, you can hand the file to the print shop for output.",
     ],
   };
-}
-
-function downloadReport() {
-  if (!state.metrics) return;
-  const m = state.metrics;
-  const dpiStatus = statusForDpi(m.dpi.effective, m.print.distance);
-  const sharpStatus = statusForSharpness(m.sharpness);
-  const noiseStatus = statusForNoise(m.noise);
-  const colorStatus = statusForColor(m.colorRisk);
-  const bleedStatus = statusForBleed(m.print.bleedMm);
-  const scoreLabel = m.scores.total >= 85 ? "Green: ready for pre-print" : m.scores.total >= 70 ? "Yellow: fix before printing" : "Red: not recommended to print as is";
-  const target = targets[m.print.distance];
-  const lines = [
-    "AI 圖送印前檢查摘要",
-    `產生日期：${new Date().toLocaleDateString("zh-TW")}`,
-    "",
-    "一、送印需求",
-    `檔名：${m.fileName}`,
-    `用途：${getUseLabel()}`,
-    `輸出尺寸：${m.print.widthMm} x ${m.print.heightMm} mm`,
-    `出血設定：${m.print.bleedMm} mm（${bleedStatus.label}；此工具只檢查設定值，仍需確認圖面背景是否延伸到出血區）`,
-    `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
-    "",
-    "二、檔案資訊",
-    `圖片像素：${m.pixelWidth} x ${m.pixelHeight} px`,
-    `Effective DPI (estimated from output size)：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}；此用途建議約 ${target.yellow}-${target.green} DPI 以上）`,
-    `300 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
-    `150 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
-    `72 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
-    "",
-    "三、初步風險估算",
-    `整體評估：${scoreLabel}（${m.scores.total} 分）`,
-    `解析度：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}）`,
-    `Sharpness：${m.sharpness.toFixed(1)}（${sharpStatus.label}）`,
-    `Compression / noise：${Math.round(m.noise.speckleRatio * 100)}%（${noiseStatus.label}）`,
-    `CMYK color-shift risk estimate：${Math.round(m.colorRisk.riskyRatio * 100)}%（${colorStatus.label}）`,
-    "",
-    "四、請印刷店協助確認",
-    "1. 我不是設計專業，想請貴店協助確認此檔案能否以目標尺寸輸出。",
-    "2. 若需要轉成貴店可印的格式，請協助代為轉檔並告知是否需要加收處理費。",
-    "3. 若解析度、出血、裁切、安全邊界或背景延伸不足，請直接告知需要補哪裡。",
-    "4. 若畫面中的 Logo、徽章、邊緣或重要細節不適合直接輸出，請協助判斷是否要改用 PDF、AI、TIFF、PNG 或其他交付格式。",
-    "5. 若正式大量印刷，請建議是否需要先做局部或小張打樣確認暗部、細節與色彩。",
-    "",
-    "備註",
-    "此報告為客戶端初步數位檢查摘要，不保證實際印刷結果；正式輸出仍以印刷店規格、紙材、機台、ICC Profile、CMYK 轉換與打樣結果為準。",
-  ];
-  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${safeFileStem(m.fileName)}-${dateStamp()}-print-check-report.txt`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function safeFileStem(fileName) {
-  const stem = (fileName || "image").replace(/\.[^.]+$/, "");
-  return stem.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80) || "image";
-}
-
-function dateStamp() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}${mm}${dd}`;
 }

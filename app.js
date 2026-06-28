@@ -6,11 +6,17 @@ const presets = {
   banner: { width: 3000, height: 900, distance: "far" },
 };
 
-const targets = {
-  close: { green: 300, yellow: 220 },
-  poster: { green: 200, yellow: 150 },
-  far: { green: 120, yellow: 72 },
-};
+// 依「實際輸出最長邊（mm）」決定可接受的有效 DPI 門檻。
+// 印刷店實務：一般輸出一律以 300 DPI 為標準；只有大圖輸出才放寬，
+// 因為做到 300 檔案會大到電腦跑不動，而且看的距離遠本來就不需要。
+// 超過 300 不會更清楚，只是放大縮小的彈性空間；小尺寸門檻最高也是 300。
+function getDpiTargets(widthMm, heightMm) {
+  const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
+  if (longest <= 1000) return { green: 300, yellow: 250, tier: "standard" };
+  if (longest <= 2000) return { green: 180, yellow: 120, tier: "large" };
+  if (longest <= 5000) return { green: 120, yellow: 80, tier: "xlarge" };
+  return { green: 80, yellow: 50, tier: "huge" };
+}
 
 const state = {
   fileName: "",
@@ -30,11 +36,18 @@ const els = {
   pickFile: document.querySelector("#pickFile"),
   loadSample: document.querySelector("#loadSample"),
   previewImage: document.querySelector("#previewImage"),
+  previewFrame: document.querySelector("#previewFrame"),
+  printSim: document.querySelector("#printSim"),
+  simActual: document.querySelector("#simActual"),
+  simDivider: document.querySelector("#simDivider"),
+  simSlider: document.querySelector("#simSlider"),
+  simTagLeft: document.querySelector("#simTagLeft"),
+  simTagRight: document.querySelector("#simTagRight"),
+  simCaption: document.querySelector("#simCaption"),
   emptyState: document.querySelector("#emptyState"),
   preset: document.querySelector("#preset"),
   widthMm: document.querySelector("#widthMm"),
   heightMm: document.querySelector("#heightMm"),
-  viewDistance: document.querySelector("#viewDistance"),
   bleedMm: document.querySelector("#bleedMm"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
@@ -55,8 +68,6 @@ const els = {
   sharpStatus: document.querySelector("#sharpStatus"),
   noiseMetric: document.querySelector("#noiseMetric"),
   noiseStatus: document.querySelector("#noiseStatus"),
-  colorMetric: document.querySelector("#colorMetric"),
-  colorStatus: document.querySelector("#colorStatus"),
   bleedMetric: document.querySelector("#bleedMetric"),
   bleedStatus: document.querySelector("#bleedStatus"),
   size300: document.querySelector("#size300"),
@@ -96,8 +107,6 @@ const els = {
   dialogSummary: document.querySelector("#dialogSummary"),
   dialogTrustNote: document.querySelector("#dialogTrustNote"),
   confirmOpenTool: document.querySelector("#confirmOpenTool"),
-  copyShopMessage: document.querySelector("#copyShopMessage"),
-  downloadReport: document.querySelector("#downloadReport"),
 };
 
 els.pickFile.addEventListener("click", () => els.fileInput.click());
@@ -122,8 +131,10 @@ els.guideModal.addEventListener("click", (event) => {
 els.confirmOpenTool.addEventListener("click", confirmOpenTool);
 els.fileInput.addEventListener("change", (event) => loadFile(event.target.files[0]));
 els.analyzeButton.addEventListener("click", analyze);
-els.copyShopMessage.addEventListener("click", copyShopMessage);
-els.downloadReport.addEventListener("click", downloadReport);
+els.simSlider.addEventListener("input", (event) => setSimSlider(Number(event.target.value)));
+window.addEventListener("resize", () => {
+  if (state.metrics) renderPrintSim(state.metrics);
+});
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !els.guideModal.hidden) {
@@ -159,12 +170,11 @@ els.preset.addEventListener("change", () => {
     const preset = presets[els.preset.value];
     els.widthMm.value = preset.width;
     els.heightMm.value = preset.height;
-    els.viewDistance.value = preset.distance;
   }
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.viewDistance, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
+[els.widthMm, els.heightMm, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -188,9 +198,8 @@ async function loadFile(file) {
     els.previewImage.src = url;
     els.previewImage.style.display = "block";
     els.emptyState.style.display = "none";
+    els.simSlider.value = 50; // 每次載入新圖，判定線回到正中央
     els.analyzeButton.disabled = false;
-    els.downloadReport.disabled = false;
-    els.copyShopMessage.disabled = false;
     els.reuploadFixed.disabled = false;
     analyze();
   };
@@ -212,12 +221,9 @@ function resetForUnsupportedFile(file) {
   state.currentFix = null;
 
   els.previewImage.removeAttribute("src");
-  els.previewImage.style.display = "none";
-  els.emptyState.style.display = "block";
+  hidePrintSim();
   els.emptyState.textContent = "目前只支援 PNG、JPG、WebP。SVG / PDF / AI 請在 Inkscape、Illustrator 或交由印刷店檢查；若要回本工具評估，請另存成 PNG、JPG 或 WebP。";
   els.analyzeButton.disabled = true;
-  els.downloadReport.disabled = true;
-  els.copyShopMessage.disabled = true;
   els.reuploadFixed.disabled = true;
 
   els.scoreBand.className = "score-band";
@@ -226,7 +232,6 @@ function resetForUnsupportedFile(file) {
   setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "待圖片" });
-  setMetric(els.colorMetric, els.colorStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "待圖片" });
   els.infoPixels.textContent = "--";
   els.infoTarget.textContent = "--";
@@ -242,7 +247,7 @@ function resetForUnsupportedFile(file) {
   els.fixStepLabel.textContent = "Format";
   els.fixStepTitle.textContent = "不支援此格式";
   els.fixStepSummary.textContent = "這類檔案比較適合在 Inkscape、Illustrator、Acrobat 或印刷店流程中確認。";
-  els.fixStepTrustNote.textContent = "本工具專注檢查 AI 生成點陣圖的有效 DPI、噪點、色偏風險與出血設定。";
+  els.fixStepTrustNote.textContent = "本工具專注檢查 AI 生成點陣圖的有效 DPI、清晰度、噪點與出血設定。";
   els.fixStepList.innerHTML = "<li>若想回本工具檢查解析度，請先另存 PNG、JPG 或 WebP。</li><li>若已是正式交付檔，請交由印刷店確認 PDF/AI/TIFF/PNG 等格式需求。</li>";
   els.fixExtraGuides.innerHTML = "";
   els.fixLink.disabled = true;
@@ -296,15 +301,13 @@ function analyze() {
   const sampled = sampleImage(state.bitmap || state.image);
   const sharpness = estimateSharpness(sampled);
   const noise = estimateNoise(sampled);
-  const colorRisk = estimateCmykRisk(sampled);
   const bleedScore = print.bleedMm >= 3 ? 10 : print.bleedMm > 0 ? 7 : 3;
 
-  const dpiScore = scoreDpi(dpi.effective, print.distance);
+  const dpiScore = scoreDpi(dpi.effective, print.dpiTargets);
   const sharpScore = scoreSharpness(sharpness);
   const noiseScore = scoreNoise(noise);
-  const colorScore = scoreColor(colorRisk);
-  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + colorScore + bleedScore), 0, 100);
-  const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise, colorRisk });
+  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + bleedScore), 0, 100);
+  const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise });
 
   state.metrics = {
     fileName: state.fileName,
@@ -314,18 +317,19 @@ function analyze() {
     dpi,
     sharpness,
     noise,
-    colorRisk,
-    scores: { total, dpiScore, sharpScore, noiseScore, colorScore, bleedScore },
+    scores: { total, dpiScore, sharpScore, noiseScore, bleedScore },
   };
 
   renderMetrics(state.metrics);
 }
 
 function getPrintSettings() {
+  const widthMm = Number(els.widthMm.value) || 1;
+  const heightMm = Number(els.heightMm.value) || 1;
   return {
-    widthMm: Number(els.widthMm.value) || 1,
-    heightMm: Number(els.heightMm.value) || 1,
-    distance: els.viewDistance.value,
+    widthMm,
+    heightMm,
+    dpiTargets: getDpiTargets(widthMm, heightMm),
     bleedMm: Number(els.bleedMm.value) || 0,
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
@@ -401,39 +405,12 @@ function estimateNoise(sample) {
   };
 }
 
-function estimateCmykRisk(sample) {
-  const { data } = sample;
-  let risky = 0;
-  let vivid = 0;
-  const total = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i] / 255;
-    const g = data[i + 1] / 255;
-    const b = data[i + 2] / 255;
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const saturation = max === 0 ? 0 : (max - min) / max;
-    const brightness = max;
-    const isNeonGreen = g > 0.72 && r < 0.35 && b < 0.45;
-    const isElectricBlue = b > 0.72 && g > 0.35 && r < 0.35;
-    const isHotPurple = b > 0.6 && r > 0.55 && g < 0.32;
-    const isHotRed = r > 0.8 && g < 0.22 && b < 0.22;
-    if (saturation > 0.62 && brightness > 0.72) vivid++;
-    if (isNeonGreen || isElectricBlue || isHotPurple || isHotRed) risky++;
-  }
-  return {
-    vividRatio: vivid / total,
-    riskyRatio: risky / total,
-  };
-}
-
 function gray(data, width, x, y) {
   const index = (y * width + x) * 4;
   return data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114;
 }
 
-function scoreDpi(dpi, distance) {
-  const target = targets[distance];
+function scoreDpi(dpi, target) {
   if (dpi >= target.green) return 40;
   if (dpi >= target.yellow) return 28 + ((dpi - target.yellow) / (target.green - target.yellow)) * 12;
   return clamp((dpi / target.yellow) * 28, 0, 28);
@@ -450,17 +427,11 @@ function scoreNoise(noise) {
   return clamp(10 - penalty, 2, 10);
 }
 
-function scoreColor(risk) {
-  const penalty = risk.riskyRatio * 45 + risk.vividRatio * 12;
-  return clamp(10 - penalty, 2, 10);
-}
-
 function normalizeTotal(rawTotal, data) {
   const levels = [
-    statusForDpi(data.dpi.effective, data.print.distance).level,
+    statusForDpi(data.dpi.effective, data.print.dpiTargets).level,
     statusForSharpness(data.sharpness).level,
     statusForNoise(data.noise).level,
-    statusForColor(data.colorRisk).level,
     statusForBleed(data.print.bleedMm).level,
   ];
 
@@ -483,12 +454,12 @@ function renderMetrics(metrics) {
   els.scoreLabel.textContent = label;
   els.scoreValue.textContent = total;
 
-  setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.distance));
-  setMetric(els.sharpMetric, els.sharpStatus, metrics.sharpness.toFixed(1), statusForSharpness(metrics.sharpness));
-  setMetric(els.noiseMetric, els.noiseStatus, `${Math.round(metrics.noise.speckleRatio * 100)}%`, statusForNoise(metrics.noise));
-  setMetric(els.colorMetric, els.colorStatus, `${Math.round(metrics.colorRisk.riskyRatio * 100)}%`, statusForColor(metrics.colorRisk));
+  setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets));
+  setMetric(els.sharpMetric, els.sharpStatus, sharpnessWord(metrics.sharpness), statusForSharpness(metrics.sharpness));
+  setMetric(els.noiseMetric, els.noiseStatus, noiseWord(metrics.noise), statusForNoise(metrics.noise));
   setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
   renderImageInfo(metrics);
+  renderPrintSim(metrics);
   renderPrintableSizes(metrics);
   renderWorkflowOrder(metrics);
 
@@ -511,7 +482,7 @@ function chooseWorkflow(metrics) {
         "如果要重排物件或改版面，先用 Canva 魔法圖層或 Photopea / Illustrator 處理。",
         "回本工具檢查有效 DPI；不足時先用 Upscayl 放大，這是多數送印情境最簡單的路線。",
         "只有需要超大尺寸、長期重複使用、改色拆物件或店家要求向量檔時，再考慮 Inkscape Trace Bitmap。",
-        "最後做 100% 局部打樣，確認邊緣、暗部與色彩。",
+        "最後放大 100% 檢查邊緣、暗部與細節。",
       ],
     };
   }
@@ -525,7 +496,7 @@ function chooseWorkflow(metrics) {
         "先整理圖層、重排文字、調整物件與版面。",
         "匯出高解析 PNG 或 PDF。",
         "回到本工具重新檢查有效 DPI；如果不足，再用 Upscayl 放大。",
-        "最後做輕度降噪 / 銳化，並產生 100% 局部打樣。",
+        "最後做輕度降噪 / 銳化，再放大 100% 檢查細節。",
       ],
     };
   }
@@ -539,7 +510,7 @@ function chooseWorkflow(metrics) {
         "放大後檢查邊緣、尖角和色塊是否乾淨。",
         "只有需要超大輸出、長期重複使用、改色拆物件或店家要求向量檔時，再用 Inkscape Trace Bitmap。",
         "向量化結果如果變髒或需要大量修節點，就回到高解析 PNG/PDF 路線。",
-        "最後再依印刷店規格確認 CMYK、PDF/X、出血與打樣。",
+        "最後再依印刷店規格確認 CMYK、PDF/X 與出血。",
       ],
     };
   }
@@ -551,10 +522,70 @@ function chooseWorkflow(metrics) {
       "先做會改版面的事情，例如裁切、補背景、重排文字或物件。",
       "回到本工具檢查有效 DPI；不足時再用 Upscayl 放大。",
       "放大後再做輕度降噪與銳化，避免先修完又被放大破壞。",
-      "做 100% 局部打樣，確認臉、邊緣、暗部與色彩。",
+      "放大 100% 檢查臉、邊緣、暗部與細節。",
       "最後依印刷店規格處理 CMYK、PDF/X 或其他交付格式。",
     ],
   };
+}
+
+// 把中間預覽圖變成「印刷後清晰度」對比：
+// 左邊 = 此尺寸該有的清晰度（門檻 DPI），右邊 = 你的檔案實際細節。
+// 模糊程度以「該尺寸的門檻」為基準（已含觀看距離），所以大圖低 DPI 不會被誤判成很糊。
+function renderPrintSim(metrics) {
+  const src = state.image;
+  if (!src) return;
+
+  const availW = Math.max(1, els.previewFrame.clientWidth - 4);
+  const availH = Math.min(540, Math.round(window.innerHeight * 0.62)) || 540;
+  const natW = src.naturalWidth;
+  const natH = src.naturalHeight;
+  const scale = Math.min(availW / natW, availH / natH);
+  const dispW = Math.max(1, Math.round(natW * scale));
+  const dispH = Math.max(1, Math.round(natH * scale));
+  els.printSim.style.width = `${dispW}px`;
+  els.printSim.style.height = `${dispH}px`;
+
+  const target = metrics.print.dpiTargets.green;
+  const ratio = clamp(metrics.dpi.effective / target, 0, 1);
+
+  // 「你的檔案實際」層用同一張 <img>，依缺多少解析度套對應的 CSS 模糊（示意）。
+  // 不再把大圖重畫到 canvas，避免超大圖縮圖時畫質反而比左邊 <img> 還差。
+  // DPI 足夠時模糊=0，兩層像素級一致，不會出現「明明夠卻比較糊」。
+  els.simActual.src = els.previewImage.src;
+  const blurPx = ratio >= 0.999 ? 0 : clamp((1 - ratio) * dispW * 0.02, 0.4, 16);
+  els.simActual.style.filter = blurPx ? `blur(${blurPx}px)` : "none";
+
+  setSimSlider(Number(els.simSlider.value));
+  renderSimCaption(metrics, ratio);
+  els.printSim.hidden = false;
+  els.simCaption.hidden = false;
+  els.emptyState.style.display = "none";
+}
+
+function setSimSlider(value) {
+  const val = clamp(value, 0, 100);
+  els.previewImage.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
+  els.simDivider.style.left = `${val}%`;
+  // 哪半邊變大，那邊標籤就清楚；縮小的那半邊淡出，拉到底就消失（取代操作說明）。
+  els.simTagLeft.style.opacity = clamp((val / 100) * 1.6, 0, 1);
+  els.simTagRight.style.opacity = clamp(((100 - val) / 100) * 1.6, 0, 1);
+}
+
+function renderSimCaption(metrics, ratio) {
+  const eff = Math.round(metrics.dpi.effective);
+  const target = metrics.print.dpiTargets.green;
+  if (ratio >= 0.999) {
+    els.simCaption.textContent = `你的圖 ${eff} DPI，已達這尺寸需要的 ${target} DPI——印出來和螢幕上看到的幾乎一樣，不會糊。`;
+  } else {
+    const pct = Math.round(ratio * 100);
+    els.simCaption.textContent = `你的圖 ${eff} DPI，這尺寸建議 ${target} DPI——印出來會比螢幕上看到的糊一點，只剩約 ${pct}% 細節（僅示意，實際以印刷店為準）。`;
+  }
+}
+
+function hidePrintSim() {
+  els.printSim.hidden = true;
+  els.simCaption.hidden = true;
+  els.emptyState.style.display = "block";
 }
 
 function renderImageInfo(metrics) {
@@ -587,29 +618,36 @@ function setMetric(valueEl, statusEl, value, status) {
   statusEl.className = status.level;
 }
 
-function statusForDpi(dpi, distance) {
-  const target = targets[distance];
+function statusForDpi(dpi, target) {
   if (dpi >= target.green) return { level: "green", label: "足夠" };
   if (dpi >= target.yellow) return { level: "yellow", label: "勉強" };
   return { level: "red", label: "不足" };
 }
 
 function statusForSharpness(sharpness) {
-  if (sharpness >= 10) return { level: "green", label: "清楚" };
-  if (sharpness >= 5) return { level: "yellow", label: "需檢查" };
-  return { level: "red", label: "偏糊" };
+  if (sharpness >= 10) return { level: "green", label: "可直接用" };
+  if (sharpness >= 5) return { level: "yellow", label: "建議局部檢查" };
+  return { level: "red", label: "建議銳化" };
+}
+
+// 大字：用白話描述「原圖本身夠不夠銳」（跟解析度無關，DPI 夠但拍糊/畫糊也會偏糊）
+function sharpnessWord(sharpness) {
+  if (sharpness >= 10) return "清楚";
+  if (sharpness >= 5) return "略偏糊";
+  return "偏糊";
 }
 
 function statusForNoise(noise) {
-  if (noise.speckleRatio < 0.08) return { level: "green", label: "乾淨" };
-  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "可接受" };
-  return { level: "red", label: "偏髒" };
+  if (noise.speckleRatio < 0.08) return { level: "green", label: "可直接用" };
+  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "輸出前輕降噪" };
+  return { level: "red", label: "建議降噪" };
 }
 
-function statusForColor(risk) {
-  if (risk.riskyRatio < 0.03 && risk.vividRatio < 0.12) return { level: "green", label: "低風險" };
-  if (risk.riskyRatio < 0.1 && risk.vividRatio < 0.25) return { level: "yellow", label: "需打樣" };
-  return { level: "red", label: "高風險" };
+// 大字：用白話描述「AI 雜訊 / JPG 壓縮髒點」多不多（對比圖看不出來，要另外判斷）
+function noiseWord(noise) {
+  if (noise.speckleRatio < 0.08) return "乾淨";
+  if (noise.speckleRatio < 0.18) return "少量雜訊";
+  return "雜訊偏多";
 }
 
 function statusForBleed(bleed) {
@@ -620,17 +658,19 @@ function statusForBleed(bleed) {
 
 function renderAdvice(metrics) {
   const advice = [];
-  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
-  const colorStatus = statusForColor(metrics.colorRisk);
+  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
 
+  const dpiTargets = metrics.print.dpiTargets;
   if (dpiStatus.level === "red") {
     advice.push("有效 DPI 不足。這是依輸出尺寸推算的結果，建議先做超解析放大，或降低輸出尺寸。");
   } else if (dpiStatus.level === "yellow") {
-    advice.push("有效 DPI 位於可接受邊緣，建議產生 100% A4 裁切打樣確認細節。");
+    advice.push("有效 DPI 位於可接受邊緣，建議放大 100% 自己檢查臉、字與邊緣細節。");
+  } else if (metrics.dpi.effective > dpiTargets.green * 1.5) {
+    advice.push(`有效 DPI 已遠超過此尺寸所需（這個尺寸約 ${dpiTargets.green} DPI 就足夠）。多出來的解析度不會讓印刷更清楚，只是放大縮小的彈性空間，不用特地追更高——例如小圖做到 1000 DPI 並沒有幫助。`);
   } else {
-    advice.push("以目前輸出尺寸推算，有效 DPI 已達此用途的基本門檻。");
+    advice.push("以目前輸出尺寸推算，有效 DPI 已達此用途的門檻。");
   }
 
   if (sharpStatus.level !== "green") {
@@ -644,11 +684,7 @@ function renderAdvice(metrics) {
     advice.push("壓縮/噪點偏高，建議先做降噪或改用較乾淨的原始圖；若 Photopea 的 Reduce Noise 沒反應，可先確認圖層已點陣化。");
   }
 
-  if (colorStatus.level !== "green") {
-    advice.push("偵測到高飽和 RGB 色彩，這只是 CMYK 色偏風險估算；正式轉色仍建議交由印刷廠依 ICC Profile 處理並打樣。");
-  } else {
-    advice.push("CMYK 色偏風險估算偏低，但正式輸出仍應依印刷廠規格處理 CMYK。");
-  }
+  advice.push("顏色本工具不評估：螢幕是 RGB，印出來通常會偏一點（亮藍、亮綠、螢光色最明顯），實際顏色以印刷店為準。");
 
   if (bleedStatus.level !== "green") {
     advice.push("出血設定不足，常見海報、貼紙、名片建議至少 3 mm。");
@@ -664,8 +700,8 @@ function renderAdvice(metrics) {
     advice.push("此圖已標記為需要拆成可編輯圖層，可考慮使用 Canva 魔法圖層做粗略分層；分層結果仍需人工檢查與整理。");
   }
 
-  if (dpiStatus.level === "green" && colorStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
-    advice.push("所有主要指標皆為綠燈，建議下一步做 100% 局部打樣，確認暗部、邊緣與色彩後再正式送印。");
+  if (dpiStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
+    advice.push("主要指標皆為綠燈，放大 100% 檢查暗部、邊緣與細節沒問題就可以送印。");
   }
 
   els.adviceList.innerHTML = advice.map((item) => `<li>${item}</li>`).join("");
@@ -903,45 +939,6 @@ function confirmOpenTool() {
   }
 }
 
-async function copyShopMessage() {
-  if (!state.metrics) return;
-  const text = buildShopMessage(state.metrics);
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-  } else {
-    fallbackCopyText(text);
-  }
-  const original = els.copyShopMessage.textContent;
-  els.copyShopMessage.textContent = "已複製";
-  window.setTimeout(() => {
-    els.copyShopMessage.textContent = original;
-  }, 1400);
-}
-
-function fallbackCopyText(text) {
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  document.execCommand("copy");
-  textarea.remove();
-}
-
-function buildShopMessage(metrics) {
-  return [
-    `你好，我想印 ${getUseLabel()}。`,
-    `檔案像素為 ${metrics.pixelWidth} x ${metrics.pixelHeight} px，目標輸出尺寸為 ${metrics.print.widthMm} x ${metrics.print.heightMm} mm，目前依尺寸估算的有效 DPI 約 ${Math.round(metrics.dpi.effective)}。`,
-    `目前設定出血 ${metrics.print.bleedMm} mm，但仍需確認背景是否有延伸到出血區。`,
-    metrics.print.isLogoAsset ? "這張圖屬於 Logo / 圖示 / 徽章素材；若直接輸出不夠乾淨，請協助判斷適合用高解析 PNG/PDF，或是否需要另外轉成貴店可印格式。" : "這張圖目前以點陣圖印刷檢查為主，不一定需要轉向量。",
-    metrics.print.needsEditableLayers ? "我也想嘗試將圖片拆成可編輯圖層，方便後續調整文字、物件或版面。" : "目前沒有特別要求拆成可編輯圖層。",
-    `CMYK 色偏風險為估算值，若需要 CMYK、PDF/X 或指定 ICC Profile，請協助轉檔或告知規格。`,
-    "請問這樣適合送印嗎？如果需要調整解析度、出血、裁切或轉色，也請告訴我。",
-  ].join("\n");
-}
-
 function getNoisePreset(noise) {
   if (noise.speckleRatio < 0.1) {
     return {
@@ -972,7 +969,7 @@ function getNoisePreset(noise) {
 
 function getUpscalePreset(metrics) {
   const currentDpi = metrics.dpi.effective;
-  const target = targets[metrics.print.distance];
+  const target = metrics.print.dpiTargets;
   const targetDpi = target.green;
   const needed = targetDpi / Math.max(currentDpi, 1);
   const scale = needed <= 1 ? 1 : needed <= 2 ? 2 : needed <= 4 ? 4 : 8;
@@ -986,7 +983,7 @@ function getUpscalePreset(metrics) {
   } else if (scale === 8) {
     caution = "8x 很容易產生假細節或處理失敗，建議先確認是否能降低輸出尺寸；必要時才使用 8x。";
   } else if (scale === 1) {
-    caution = "目前 DPI 已接近目標，通常不需要放大；若只是想更穩，可先做 100% 局部打樣。";
+    caution = "目前 DPI 已接近目標，通常不需要放大；若只是想更穩，可先放大 100% 自己檢查。";
   }
 
   return {
@@ -1006,13 +1003,13 @@ function chooseFixPlan(metrics) {
   const primaryFix = actionable[0] || null;
 
   if (fixes.length === 0) {
-    const proof = proofFix();
+    const ok = finalCheckFix();
     return {
-      title: "目前可進入打樣",
-      summary: "主要風險都已低於警戒線，下一步建議做 100% 局部打樣，而不是再套更多修復。",
-      steps: [`${proof.title}：${proof.summary}`],
-      fixes: [proof],
-      primaryFix: proof,
+      title: "目前可以送印",
+      summary: "主要風險都已低於警戒線，送印前自己放大檢查一下重點區域就好。",
+      steps: [`${ok.title}：${ok.summary}`],
+      fixes: [ok],
+      primaryFix: ok,
     };
   }
 
@@ -1026,9 +1023,8 @@ function chooseFixPlan(metrics) {
 }
 
 function collectFixes(metrics) {
-  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.distance);
+  const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const colorStatus = statusForColor(metrics.colorRisk);
   const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
   const fixes = [];
@@ -1038,7 +1034,6 @@ function collectFixes(metrics) {
   if (dpiStatus.level === "red" || dpiStatus.level === "yellow") fixes.push(upscaleFix(metrics));
   if (sharpStatus.level === "red") fixes.push(sharpenFix());
   if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
-  if (colorStatus.level !== "green") fixes.push(colorFix());
 
   return fixes;
 }
@@ -1214,7 +1209,7 @@ function inkscapeFix() {
               "把掃描數降低，先保留主色塊，不要追求完全像原圖。",
               "如果棋盤格背景被描進去，先分離/解散群組，再選取背景方塊或浮水印色塊刪除。",
               "如果徽章有厚重金屬材質、光暈或煙霧，改輸出高解析 PNG/PDF 會比較自然。",
-              "如果印刷店只是需要可印檔，不一定需要 SVG；可以附檢查報告請店家代轉 PDF。",
+              "如果印刷店只是需要可印檔，不一定需要 SVG；可以直接把原檔交給店家，請他們代轉 PDF。",
             ],
           },
         ],
@@ -1246,7 +1241,7 @@ function inkscapeFix() {
             items: [
               "把純向量圖另存 SVG；若要給印刷店，可另存 PDF。",
               "如果包含點陣圖，回本工具重新上傳輸出檔，確認有效 DPI。",
-              "大量印刷前仍建議先做小樣或局部 100% 打樣。",
+              "大量印刷前先自己放大 100% 檢查重點區域。",
             ],
           },
         ],
@@ -1278,22 +1273,6 @@ function noiseFix(metrics) {
   };
 }
 
-function colorFix() {
-  return {
-    title: "檢查色偏：使用 Photopea 做 CMYK 預覽",
-    summary: "高飽和 RGB 顏色轉印刷時可能變暗或變灰。先做 CMYK 預覽，再決定是否交給印刷店轉色。",
-    trustNote: "Photopea 可用來初步觀察 RGB 轉印刷色的落差，但不同印刷廠會使用不同 ICC Profile、紙材與油墨。這一步是風險預覽，不是保證色準。",
-    linkText: "前往 Photopea",
-    url: "https://www.photopea.com/",
-    steps: [
-      "在 Photopea 開啟圖片。",
-      "使用 Image > Mode 或色彩相關功能查看 CMYK/印刷預覽。",
-      "特別檢查亮藍、亮綠、紫色與螢光感紅色。",
-      "正式輸出前，仍建議依印刷廠 ICC Profile 處理。",
-    ],
-  };
-}
-
 function textFix() {
   return {
     title: "重排小字：使用 Photopea 或 Illustrator",
@@ -1310,85 +1289,15 @@ function textFix() {
   };
 }
 
-function proofFix() {
+function finalCheckFix() {
   return {
-    title: "目前可進入打樣",
-    summary: "主要風險都已低於警戒線。下一步建議產生 100% 局部打樣，確認細節和色彩。",
-    trustNote: "數位評估只能預測風險，不能取代實體打樣。正式大量印刷前，最好先印 100% 局部小樣確認細節、暗部與色彩。",
-    linkText: "查看打樣說明",
-    url: "https://helpx.adobe.com/tw/acrobat/using/printing-pdfs-custom-sizes.html",
+    title: "可以送印：自己放大檢查一下",
+    summary: "主要風險都過關了。送印前自己把圖放到 100% 看一遍重點區域就好。",
+    trustNote: "數位檢查只能估風險，不代表保證印刷結果；正式輸出仍以印刷店規格與實際輸出為準。",
     steps: [
-      "挑選畫面中最重要的區域，例如臉、Logo、小字或暗部。",
-      "用實際尺寸裁切一塊 A4 可印範圍。",
-      "先印小樣確認細節，再印完整海報。",
-      "送印時附上本工具的檢查報告。",
+      "把圖放大到 100%，檢查臉、文字、Logo、邊緣和暗部。",
+      "確認背景有延伸到出血區、重要內容沒貼邊。",
+      "沒問題就可以把圖檔交給印刷店輸出。",
     ],
   };
-}
-
-function downloadReport() {
-  if (!state.metrics) return;
-  const m = state.metrics;
-  const dpiStatus = statusForDpi(m.dpi.effective, m.print.distance);
-  const sharpStatus = statusForSharpness(m.sharpness);
-  const noiseStatus = statusForNoise(m.noise);
-  const colorStatus = statusForColor(m.colorRisk);
-  const bleedStatus = statusForBleed(m.print.bleedMm);
-  const scoreLabel = m.scores.total >= 85 ? "綠燈：可送印前處理" : m.scores.total >= 70 ? "黃燈：建議修正後送印" : "紅燈：不建議直接送印";
-  const target = targets[m.print.distance];
-  const lines = [
-    "AI 圖送印前檢查摘要",
-    `產生日期：${new Date().toLocaleDateString("zh-TW")}`,
-    "",
-    "一、送印需求",
-    `檔名：${m.fileName}`,
-    `用途：${getUseLabel()}`,
-    `輸出尺寸：${m.print.widthMm} x ${m.print.heightMm} mm`,
-    `出血設定：${m.print.bleedMm} mm（${bleedStatus.label}；此工具只檢查設定值，仍需確認圖面背景是否延伸到出血區）`,
-    `Logo / 圖示 / 徽章素材：${m.print.isLogoAsset ? "是" : "否"}`,
-    "",
-    "二、檔案資訊",
-    `圖片像素：${m.pixelWidth} x ${m.pixelHeight} px`,
-    `有效 DPI（依輸出尺寸估算）：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}；此用途建議約 ${target.yellow}-${target.green} DPI 以上）`,
-    `300 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 300)}`,
-    `150 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 150)}`,
-    `72 DPI 可印尺寸：約 ${formatPrintSize(m.pixelWidth, m.pixelHeight, 72)}`,
-    "",
-    "三、初步風險估算",
-    `整體評估：${scoreLabel}（${m.scores.total} 分）`,
-    `解析度：${Math.round(m.dpi.effective)} DPI（${dpiStatus.label}）`,
-    `銳利度：${m.sharpness.toFixed(1)}（${sharpStatus.label}）`,
-    `壓縮 / 噪點：${Math.round(m.noise.speckleRatio * 100)}%（${noiseStatus.label}）`,
-    `CMYK 色偏風險估算：${Math.round(m.colorRisk.riskyRatio * 100)}%（${colorStatus.label}）`,
-    "",
-    "四、請印刷店協助確認",
-    "1. 我不是設計專業，想請貴店協助確認此檔案能否以目標尺寸輸出。",
-    "2. 若需要轉成貴店可印的格式，請協助代為轉檔並告知是否需要加收處理費。",
-    "3. 若解析度、出血、裁切、安全邊界或背景延伸不足，請直接告知需要補哪裡。",
-    "4. 若畫面中的 Logo、徽章、邊緣或重要細節不適合直接輸出，請協助判斷是否要改用 PDF、AI、TIFF、PNG 或其他交付格式。",
-    "5. 若正式大量印刷，請建議是否需要先做局部或小張打樣確認暗部、細節與色彩。",
-    "",
-    "備註",
-    "此報告為客戶端初步數位檢查摘要，不保證實際印刷結果；正式輸出仍以印刷店規格、紙材、機台、ICC Profile、CMYK 轉換與打樣結果為準。",
-  ];
-  const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${safeFileStem(m.fileName)}-${dateStamp()}-print-check-report.txt`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function safeFileStem(fileName) {
-  const stem = (fileName || "image").replace(/\.[^.]+$/, "");
-  return stem.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80) || "image";
-}
-
-function dateStamp() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}${mm}${dd}`;
 }
