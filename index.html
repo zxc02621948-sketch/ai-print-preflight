@@ -18,7 +18,7 @@
           </div>
           <div class="hero-notes">
             <p><strong>印刷邊界</strong> 本工具提供風險檢查與修復方向，不保證實際印刷結果；正式輸出仍需依印刷店規格、紙材與實際輸出結果確認。</p>
-            <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、降噪、補出血或重排文字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
+            <p><strong>手機提醒</strong> 手機適合先看分數與可印尺寸；需要放大、向量化、清顆粒或重排文字時，建議回到電腦操作。Upscayl 請優先用免費桌面版。</p>
           </div>
         </section>
 
@@ -59,11 +59,6 @@
                 <input id="heightMm" type="number" min="1" step="1" value="420" />
               </label>
             </div>
-
-            <label>
-              出血 mm
-              <input id="bleedMm" type="number" min="0" step="0.5" value="3" />
-            </label>
 
             <div class="switch-row">
               <input id="isLogoAsset" type="checkbox" />
@@ -229,21 +224,12 @@
               </article>
               <article class="metric">
                 <div>
-                  <span>雜訊 / 壓縮髒點<small>AI 雜點・JPG 壓縮痕跡</small></span>
+                  <span>顆粒 / 髒點<small>AI 圖常有的細小顆粒，印出來更明顯</small></span>
                   <strong id="noiseMetric">--</strong>
                 </div>
                 <em id="noiseStatus">等待圖片</em>
               </article>
-              <article class="metric">
-                <div>
-                  <span>出血設定</span>
-                  <strong id="bleedMetric">--</strong>
-                </div>
-                <em id="bleedStatus">等待設定</em>
-              </article>
             </div>
-
-            <p class="small-note">本工具無法自動判斷背景是否真的延伸到出血區，請在修圖工具中確認。</p>
 
             <div class="print-size-card">
               <h2>適合印多大</h2>

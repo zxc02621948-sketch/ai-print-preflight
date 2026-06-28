@@ -48,7 +48,6 @@ const els = {
   preset: document.querySelector("#preset"),
   widthMm: document.querySelector("#widthMm"),
   heightMm: document.querySelector("#heightMm"),
-  bleedMm: document.querySelector("#bleedMm"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
@@ -68,8 +67,6 @@ const els = {
   sharpStatus: document.querySelector("#sharpStatus"),
   noiseMetric: document.querySelector("#noiseMetric"),
   noiseStatus: document.querySelector("#noiseStatus"),
-  bleedMetric: document.querySelector("#bleedMetric"),
-  bleedStatus: document.querySelector("#bleedStatus"),
   size300: document.querySelector("#size300"),
   size150: document.querySelector("#size150"),
   size72: document.querySelector("#size72"),
@@ -174,7 +171,7 @@ els.preset.addEventListener("change", () => {
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
+[els.widthMm, els.heightMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -232,7 +229,6 @@ function resetForUnsupportedFile(file) {
   setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "待圖片" });
-  setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "待圖片" });
   els.infoPixels.textContent = "--";
   els.infoTarget.textContent = "--";
   els.infoDpi.textContent = "--";
@@ -247,7 +243,7 @@ function resetForUnsupportedFile(file) {
   els.fixStepLabel.textContent = "Format";
   els.fixStepTitle.textContent = "不支援此格式";
   els.fixStepSummary.textContent = "這類檔案比較適合在 Inkscape、Illustrator、Acrobat 或印刷店流程中確認。";
-  els.fixStepTrustNote.textContent = "本工具專注檢查 AI 生成點陣圖的有效 DPI、清晰度、噪點與出血設定。";
+  els.fixStepTrustNote.textContent = "本工具專注檢查 AI 生成點陣圖的有效 DPI、清晰度與顆粒髒點。";
   els.fixStepList.innerHTML = "<li>若想回本工具檢查解析度，請先另存 PNG、JPG 或 WebP。</li><li>若已是正式交付檔，請交由印刷店確認 PDF/AI/TIFF/PNG 等格式需求。</li>";
   els.fixExtraGuides.innerHTML = "";
   els.fixLink.disabled = true;
@@ -301,12 +297,10 @@ function analyze() {
   const sampled = sampleImage(state.bitmap || state.image);
   const sharpness = estimateSharpness(sampled);
   const noise = estimateNoise(sampled);
-  const bleedScore = print.bleedMm >= 3 ? 10 : print.bleedMm > 0 ? 7 : 3;
-
   const dpiScore = scoreDpi(dpi.effective, print.dpiTargets);
   const sharpScore = scoreSharpness(sharpness);
   const noiseScore = scoreNoise(noise);
-  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + bleedScore), 0, 100);
+  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore), 0, 100);
   const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise });
 
   state.metrics = {
@@ -317,7 +311,7 @@ function analyze() {
     dpi,
     sharpness,
     noise,
-    scores: { total, dpiScore, sharpScore, noiseScore, bleedScore },
+    scores: { total, dpiScore, sharpScore, noiseScore },
   };
 
   renderMetrics(state.metrics);
@@ -330,7 +324,6 @@ function getPrintSettings() {
     widthMm,
     heightMm,
     dpiTargets: getDpiTargets(widthMm, heightMm),
-    bleedMm: Number(els.bleedMm.value) || 0,
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
   };
@@ -432,7 +425,6 @@ function normalizeTotal(rawTotal, data) {
     statusForDpi(data.dpi.effective, data.print.dpiTargets).level,
     statusForSharpness(data.sharpness).level,
     statusForNoise(data.noise).level,
-    statusForBleed(data.print.bleedMm).level,
   ];
 
   if (levels.every((level) => level === "green")) {
@@ -457,7 +449,6 @@ function renderMetrics(metrics) {
   setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets));
   setMetric(els.sharpMetric, els.sharpStatus, sharpnessWord(metrics.sharpness), statusForSharpness(metrics.sharpness));
   setMetric(els.noiseMetric, els.noiseStatus, noiseWord(metrics.noise), statusForNoise(metrics.noise));
-  setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
   renderImageInfo(metrics);
   renderPrintSim(metrics);
   renderPrintableSizes(metrics);
@@ -478,7 +469,7 @@ function chooseWorkflow(metrics) {
     return {
       summary: "Logo / 圖示若也需要改物件，先處理版面與圖層，再回來檢查解析度；向量化只在超大輸出、改色拆物件或店家要求時再做。",
       steps: [
-        "先確認輸出尺寸、方向、比例、留白與出血。",
+        "先確認輸出尺寸、方向、比例與留白。",
         "如果要重排物件或改版面，先用 Canva 魔法圖層或 Photopea / Illustrator 處理。",
         "回本工具檢查有效 DPI；不足時先用 Upscayl 放大，這是多數送印情境最簡單的路線。",
         "只有需要超大尺寸、長期重複使用、改色拆物件或店家要求向量檔時，再考慮 Inkscape Trace Bitmap。",
@@ -491,12 +482,12 @@ function chooseWorkflow(metrics) {
     return {
       summary: "需要拆圖層時，先做會改版面的事情，再做放大；這樣檔案比較小，Canva / Photopea 也比較好處理。",
       steps: [
-        "先確認輸出尺寸、方向、比例、留白與是否需要出血。",
+        "先確認輸出尺寸、方向、比例與留白。",
         "用 Canva 魔法圖層粗略拆分物件。",
         "先整理圖層、重排文字、調整物件與版面。",
         "匯出高解析 PNG 或 PDF。",
         "回到本工具重新檢查有效 DPI；如果不足，再用 Upscayl 放大。",
-        "最後做輕度降噪 / 銳化，再放大 100% 檢查細節。",
+        "最後輕微清一下顆粒 / 銳化，再放大 100% 檢查細節。",
       ],
     };
   }
@@ -505,12 +496,12 @@ function chooseWorkflow(metrics) {
     return {
       summary: "Logo / 圖示 / 徽章先走高解析 PNG/PDF 路線；向量化是進階選項，不是送印必做。",
       steps: [
-        "先用本工具確認有效 DPI、出血和色彩風險。",
+        "先用本工具確認有效 DPI 與清晰度。",
         "如果 DPI 不足，先用 Upscayl 放大，通常比硬轉向量更快。",
         "放大後檢查邊緣、尖角和色塊是否乾淨。",
         "只有需要超大輸出、長期重複使用、改色拆物件或店家要求向量檔時，再用 Inkscape Trace Bitmap。",
         "向量化結果如果變髒或需要大量修節點，就回到高解析 PNG/PDF 路線。",
-        "最後再依印刷店規格確認 CMYK、PDF/X 與出血。",
+        "最後再交給印刷店確認可印格式與裁切需求。",
       ],
     };
   }
@@ -518,10 +509,10 @@ function chooseWorkflow(metrics) {
   return {
     summary: "一般 AI 海報或角色圖建議先處理版面，再放大；最後才做印刷輸出檢查。",
     steps: [
-      "先決定輸出尺寸、方向與比例，確認是否需要裁切、補背景或加出血。",
+      "先決定輸出尺寸、方向與比例，確認是否需要裁切或補背景。",
       "先做會改版面的事情，例如裁切、補背景、重排文字或物件。",
       "回到本工具檢查有效 DPI；不足時再用 Upscayl 放大。",
-      "放大後再做輕度降噪與銳化，避免先修完又被放大破壞。",
+      "放大後再輕微清顆粒與銳化，避免先修完又被放大破壞。",
       "放大 100% 檢查臉、邊緣、暗部與細節。",
       "最後依印刷店規格處理 CMYK、PDF/X 或其他交付格式。",
     ],
@@ -639,28 +630,21 @@ function sharpnessWord(sharpness) {
 
 function statusForNoise(noise) {
   if (noise.speckleRatio < 0.08) return { level: "green", label: "可直接用" };
-  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "輸出前輕降噪" };
-  return { level: "red", label: "建議降噪" };
+  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "輸出前清一下" };
+  return { level: "red", label: "建議清掉" };
 }
 
-// 大字：用白話描述「AI 雜訊 / JPG 壓縮髒點」多不多（對比圖看不出來，要另外判斷）
+// 大字：用白話描述「AI 圖常有的顆粒 / 髒點」多不多（傳統印刷圖少見，對比圖也看不出來）
 function noiseWord(noise) {
   if (noise.speckleRatio < 0.08) return "乾淨";
-  if (noise.speckleRatio < 0.18) return "少量雜訊";
-  return "雜訊偏多";
-}
-
-function statusForBleed(bleed) {
-  if (bleed >= 3) return { level: "green", label: "標準" };
-  if (bleed > 0) return { level: "yellow", label: "偏少" };
-  return { level: "red", label: "缺出血" };
+  if (noise.speckleRatio < 0.18) return "有點顆粒";
+  return "顆粒偏多";
 }
 
 function renderAdvice(metrics) {
   const advice = [];
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const bleedStatus = statusForBleed(metrics.print.bleedMm);
 
   const dpiTargets = metrics.print.dpiTargets;
   if (dpiStatus.level === "red") {
@@ -679,18 +663,14 @@ function renderAdvice(metrics) {
 
   const noiseStatus = statusForNoise(metrics.noise);
   if (noiseStatus.level === "yellow") {
-    advice.push("壓縮/噪點為可接受但仍可改善，建議輸出前做輕度降噪；若 Photopea 的 Reduce Noise 沒反應，可改用 Surface Blur 或 Median。");
+    advice.push("畫面有一些顆粒/髒點（AI 圖常見），可接受但仍可改善，建議輸出前輕微清一下；用 Photopea 的 Reduce Noise（清顆粒）；若沒反應，可改用 Surface Blur 或 Median。");
   } else if (noiseStatus.level === "red") {
-    advice.push("壓縮/噪點偏高，建議先做降噪或改用較乾淨的原始圖；若 Photopea 的 Reduce Noise 沒反應，可先確認圖層已點陣化。");
+    advice.push("顆粒/髒點偏多（AI 圖常見），建議先用 Photopea 的 Reduce Noise（清顆粒）清掉，或改用較乾淨的原始圖；若沒反應，可先確認圖層已點陣化。");
   }
 
   advice.push("顏色本工具不評估：螢幕是 RGB，印出來通常會偏一點（亮藍、亮綠、螢光色最明顯），實際顏色以印刷店為準。");
 
-  if (bleedStatus.level !== "green") {
-    advice.push("出血設定不足，常見海報、貼紙、名片建議至少 3 mm。");
-  } else {
-    advice.push("出血數值已達常見標準，但目前只檢查你設定的出血值，仍需確認背景有延伸到出血外框。");
-  }
+  advice.push("出血是裁切用的預留邊，AI 圖通常沒有。如果要印到紙的最邊邊（名片、貼紙、滿版海報），送印時跟印刷店說一聲，請他們幫你留邊就好。");
 
   if (metrics.print.isLogoAsset) {
     advice.push("此圖已標記為 Logo / 圖示 / 徽章素材；多數送印情境先用高解析 PNG/PDF 即可。只有超大輸出、長期重複使用、改色拆物件或店家要求時，再考慮向量化。");
@@ -700,7 +680,7 @@ function renderAdvice(metrics) {
     advice.push("此圖已標記為需要拆成可編輯圖層，可考慮使用 Canva 魔法圖層做粗略分層；分層結果仍需人工檢查與整理。");
   }
 
-  if (dpiStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
+  if (dpiStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
     advice.push("主要指標皆為綠燈，放大 100% 檢查暗部、邊緣與細節沒問題就可以送印。");
   }
 
@@ -946,7 +926,7 @@ function getNoisePreset(noise) {
       strength: 4,
       protectDetail: 45,
       colorNoise: 10,
-      note: "目前屬於可接受噪點，先用輕度設定，重點是保留材質和細線。",
+      note: "目前顆粒在可接受範圍，先用輕度設定，重點是保留材質和細線。",
     };
   }
   if (noise.speckleRatio < 0.18) {
@@ -955,7 +935,7 @@ function getNoisePreset(noise) {
       strength: 6,
       protectDetail: 35,
       colorNoise: 15,
-      note: "噪點已經會影響暗部，先用中度設定，再用預覽確認細節沒有被抹平。",
+      note: "顆粒已經會影響暗部，先用中度設定，再用預覽確認細節沒有被抹平。",
     };
   }
   return {
@@ -963,7 +943,7 @@ function getNoisePreset(noise) {
     strength: 8,
     protectDetail: 25,
     colorNoise: 20,
-    note: "噪點偏高，但仍不建議一次拉滿；先處理髒點，再檢查邊緣和文字。",
+    note: "顆粒偏多，但仍不建議一次拉滿；先處理髒點，再檢查邊緣和文字。",
   };
 }
 
@@ -1025,12 +1005,10 @@ function chooseFixPlan(metrics) {
 function collectFixes(metrics) {
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
   const fixes = [];
 
   if (metrics.print.needsEditableLayers) fixes.push(canvaFix());
-  if (bleedStatus.level !== "green") fixes.push(bleedFix());
   if (dpiStatus.level === "red" || dpiStatus.level === "yellow") fixes.push(upscaleFix(metrics));
   if (sharpStatus.level === "red") fixes.push(sharpenFix());
   if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
@@ -1071,22 +1049,6 @@ function upscaleFix(metrics) {
   };
 }
 
-function bleedFix() {
-  return {
-    title: "補出血：使用 Photopea 調整畫布",
-    summary: "出血不足會讓裁切後邊緣露白。先把畫布加大並保留重要內容在安全範圍內。",
-    trustNote: "Photopea 是瀏覽器上的影像編輯器，操作方式接近 Photoshop，適合做裁切、畫布尺寸、出血、簡單銳化與輸出。正式 CMYK 仍建議依印刷廠規格處理。",
-    linkText: "前往 Photopea",
-    url: "https://www.photopea.com/",
-    steps: [
-      "在 Photopea 使用 File > Open 開啟圖片。",
-      "用 Image > Canvas Size 將畫布左右上下各加 3 mm。",
-      "把背景或圖像延伸到出血區，文字和 Logo 不要貼邊。",
-      "匯出 PNG 或 PDF 後回來重新評估。",
-    ],
-  };
-}
-
 function sharpenFix() {
   return {
     title: "改善模糊：使用 Photopea 銳化",
@@ -1118,7 +1080,7 @@ function canvaFix() {
       "在工具中選擇魔法圖層。",
       "等待 Canva 粗略拆分圖層。",
       "檢查每個圖層是否拆得合理，必要時手動刪除、重排或修正。",
-      "若要印刷，最後仍需確認尺寸、出血、解析度與印刷店輸出規格。",
+      "若要印刷，最後仍需確認尺寸、解析度與印刷店輸出規格。",
     ],
   };
 }
@@ -1253,9 +1215,9 @@ function inkscapeFix() {
 function noiseFix(metrics) {
   const preset = getNoisePreset(metrics.noise);
   return {
-    title: "改善噪點：使用 Photopea 備用降噪流程",
-    summary: `目前壓縮/噪點建議用${preset.label}降噪。Reduce Noise 若沒反應，通常是沒有選到圖片圖層；也可改用 Surface Blur 或 Median。`,
-    trustNote: "Photopea 的濾鏡需要套在一般點陣圖層上；如果圖層是文字、形狀、智慧物件或特殊圖層，可能要先 Rasterize。降噪只能降低髒點和壓縮感，不能補回缺失細節。",
+    title: "清掉顆粒髒點：使用 Photopea（Reduce Noise）",
+    summary: `畫面有 AI 圖常見的顆粒/髒點，建議用${preset.label}強度清掉。Photopea 的 Reduce Noise（清顆粒）若沒反應，通常是沒有選到圖片圖層；也可改用 Surface Blur 或 Median。`,
+    trustNote: "Photopea 的濾鏡需要套在一般點陣圖層上；如果圖層是文字、形狀、智慧物件或特殊圖層，可能要先 Rasterize。清顆粒只能降低髒點和壓縮感，不能補回缺失細節。",
     linkText: "前往 Photopea",
     url: "https://www.photopea.com/",
     steps: [
@@ -1265,7 +1227,7 @@ function noiseFix(metrics) {
       `建議起始值：Strength ${preset.strength}、Protect Detail ${preset.protectDetail}%、Reduce Color Noise ${preset.colorNoise}%。`,
       preset.note,
       "如果畫面變太塑膠或金線/碎片消失，把 Strength 降 1-2，或把 Protect Detail 提高 10%。",
-      "如果雜點還很明顯，把 Strength 加 1，但不要一次拉到最高。",
+      "如果顆粒還很明顯，把 Strength 加 1，但不要一次拉到最高。",
       "Reduce Noise 仍無法使用時，改試 Filter > Blur > Surface Blur，或 Filter > Noise > Median，Median 從 1 或 2 開始。",
       "匯出 PNG，避免再次存成低品質 JPG。",
       "回到本工具，重新上傳修正版檢查分數。",
@@ -1296,7 +1258,7 @@ function finalCheckFix() {
     trustNote: "數位檢查只能估風險，不代表保證印刷結果；正式輸出仍以印刷店規格與實際輸出為準。",
     steps: [
       "把圖放大到 100%，檢查臉、文字、Logo、邊緣和暗部。",
-      "確認背景有延伸到出血區、重要內容沒貼邊。",
+      "確認重要的字、Logo 沒有貼到紙的最邊邊。",
       "沒問題就可以把圖檔交給印刷店輸出。",
     ],
   };

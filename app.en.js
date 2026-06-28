@@ -6,10 +6,11 @@ const presets = {
   banner: { width: 3000, height: 900, distance: "far" },
 };
 
-// Decide the acceptable effective-DPI threshold based on the actual longest output edge (mm).
-// Print-shop reality: normal output is always treated as 300 DPI; only large-format output relaxes this,
-// because hitting 300 would make the file so big the computer chokes, and from a distance you don't need it anyway.
-// Going above 300 won't look sharper, it just gives you room to scale up or down; for small sizes the threshold tops out at 300 too.
+// Decide the acceptable effective DPI target based on the actual output's longest edge (mm).
+// Print-shop practice: normal output uses 300 DPI as the standard; only large output relaxes it,
+// because hitting 300 would make the file so big your computer can't handle it, and from a far
+// viewing distance you don't need it anyway.
+// Going above 300 won't look sharper, it just gives you room to scale up or down; small sizes cap at 300.
 function getDpiTargets(widthMm, heightMm) {
   const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
   if (longest <= 1000) return { green: 300, yellow: 250, tier: "standard" };
@@ -48,7 +49,6 @@ const els = {
   preset: document.querySelector("#preset"),
   widthMm: document.querySelector("#widthMm"),
   heightMm: document.querySelector("#heightMm"),
-  bleedMm: document.querySelector("#bleedMm"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
@@ -68,8 +68,6 @@ const els = {
   sharpStatus: document.querySelector("#sharpStatus"),
   noiseMetric: document.querySelector("#noiseMetric"),
   noiseStatus: document.querySelector("#noiseStatus"),
-  bleedMetric: document.querySelector("#bleedMetric"),
-  bleedStatus: document.querySelector("#bleedStatus"),
   size300: document.querySelector("#size300"),
   size150: document.querySelector("#size150"),
   size72: document.querySelector("#size72"),
@@ -174,7 +172,7 @@ els.preset.addEventListener("change", () => {
   analyze();
 });
 
-[els.widthMm, els.heightMm, els.bleedMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
+[els.widthMm, els.heightMm, els.isLogoAsset, els.needsEditableLayers].forEach((el) => {
   el.addEventListener("input", () => {
     els.preset.value = "custom";
     analyze();
@@ -198,7 +196,7 @@ async function loadFile(file) {
     els.previewImage.src = url;
     els.previewImage.style.display = "block";
     els.emptyState.style.display = "none";
-    els.simSlider.value = 50; // Every time a new image loads, the divider line goes back to the center
+    els.simSlider.value = 50; // Each time a new image loads, reset the divider line to the center
     els.analyzeButton.disabled = false;
     els.reuploadFixed.disabled = false;
     analyze();
@@ -222,7 +220,7 @@ function resetForUnsupportedFile(file) {
 
   els.previewImage.removeAttribute("src");
   hidePrintSim();
-  els.emptyState.textContent = "Only PNG, JPG and WebP are supported right now. For SVG / PDF / AI files, check them in Inkscape, Illustrator, or with your print shop; to bring them back into this tool, save them as PNG, JPG or WebP first.";
+  els.emptyState.textContent = "Only PNG, JPG, and WebP are supported for now. For SVG / PDF / AI files, check them in Inkscape, Illustrator, or with your print shop; if you want this tool to evaluate one, save it as PNG, JPG, or WebP first.";
   els.analyzeButton.disabled = true;
   els.reuploadFixed.disabled = true;
 
@@ -232,23 +230,22 @@ function resetForUnsupportedFile(file) {
   setMetric(els.dpiMetric, els.dpiStatus, "--", { level: "", label: "Waiting for image" });
   setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "Waiting for image" });
   setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "Waiting for image" });
-  setMetric(els.bleedMetric, els.bleedStatus, "--", { level: "", label: "Waiting for image" });
   els.infoPixels.textContent = "--";
   els.infoTarget.textContent = "--";
   els.infoDpi.textContent = "--";
   els.infoUse.textContent = "--";
-  els.workflowSummary.textContent = "SVG / PDF / AI are vector or delivery files. Open them in a professional editor to zoom in and check, or export a raster image first and then bring that back into this tool to check the effective DPI.";
-  els.workflowSteps.innerHTML = "<li>To check print resolution, export a PNG, JPG or WebP from your vector tool.</li><li>To hand off to a shop, use PDF, AI, TIFF, PNG, or whatever format the shop asks for.</li>";
-  els.adviceList.innerHTML = "<li>This tool no longer scores SVG files, to avoid giving a number that doesn't really mean anything.</li>";
+  els.workflowSummary.textContent = "SVG / PDF / AI files are vector or delivery files. Open them in a professional editor to zoom in and check, or export a raster image and bring it back here to check the effective DPI.";
+  els.workflowSteps.innerHTML = "<li>To check print resolution, export a PNG, JPG, or WebP from your vector tool.</li><li>To hand off to a print shop, PDF, AI, TIFF, PNG, or a format they specify works best.</li>";
+  els.adviceList.innerHTML = "<li>This tool no longer scores SVGs, to avoid giving a number that doesn't really mean anything.</li>";
   els.fixTitle.textContent = "This format isn't supported";
-  els.fixSummary.textContent = "Switch to PNG, JPG or WebP for the pre-print check.";
-  els.fixSteps.innerHTML = "<li>For SVG / PDF / AI, go back to your vector software, or let the shop do the delivery check.</li>";
+  els.fixSummary.textContent = "Use PNG, JPG, or WebP for pre-print checks instead.";
+  els.fixSteps.innerHTML = "<li>For SVG / PDF / AI, go back to vector software or let the print shop run the delivery check.</li>";
   els.fixTabs.innerHTML = "";
   els.fixStepLabel.textContent = "Format";
   els.fixStepTitle.textContent = "This format isn't supported";
-  els.fixStepSummary.textContent = "These files are better confirmed in Inkscape, Illustrator, Acrobat, or your print shop's workflow.";
-  els.fixStepTrustNote.textContent = "This tool focuses on checking the effective DPI, sharpness, noise and bleed of AI-generated raster images.";
-  els.fixStepList.innerHTML = "<li>To bring it back into this tool to check resolution, save it as PNG, JPG or WebP first.</li><li>If it's already a final delivery file, let the print shop confirm the PDF/AI/TIFF/PNG format requirements.</li>";
+  els.fixStepSummary.textContent = "These files are better checked in Inkscape, Illustrator, Acrobat, or your print shop's workflow.";
+  els.fixStepTrustNote.textContent = "This tool focuses on checking effective DPI, sharpness, and grain/specks for AI-generated raster images.";
+  els.fixStepList.innerHTML = "<li>To check resolution here, save a PNG, JPG, or WebP first.</li><li>If it's already a final delivery file, let the print shop confirm the PDF/AI/TIFF/PNG format requirements.</li>";
   els.fixExtraGuides.innerHTML = "";
   els.fixLink.disabled = true;
   els.fixPrev.disabled = true;
@@ -301,12 +298,10 @@ function analyze() {
   const sampled = sampleImage(state.bitmap || state.image);
   const sharpness = estimateSharpness(sampled);
   const noise = estimateNoise(sampled);
-  const bleedScore = print.bleedMm >= 3 ? 10 : print.bleedMm > 0 ? 7 : 3;
-
   const dpiScore = scoreDpi(dpi.effective, print.dpiTargets);
   const sharpScore = scoreSharpness(sharpness);
   const noiseScore = scoreNoise(noise);
-  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore + bleedScore), 0, 100);
+  const rawTotal = clamp(Math.round(dpiScore + sharpScore + noiseScore), 0, 100);
   const total = normalizeTotal(rawTotal, { dpi, print, sharpness, noise });
 
   state.metrics = {
@@ -317,7 +312,7 @@ function analyze() {
     dpi,
     sharpness,
     noise,
-    scores: { total, dpiScore, sharpScore, noiseScore, bleedScore },
+    scores: { total, dpiScore, sharpScore, noiseScore },
   };
 
   renderMetrics(state.metrics);
@@ -330,7 +325,6 @@ function getPrintSettings() {
     widthMm,
     heightMm,
     dpiTargets: getDpiTargets(widthMm, heightMm),
-    bleedMm: Number(els.bleedMm.value) || 0,
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
   };
@@ -432,7 +426,6 @@ function normalizeTotal(rawTotal, data) {
     statusForDpi(data.dpi.effective, data.print.dpiTargets).level,
     statusForSharpness(data.sharpness).level,
     statusForNoise(data.noise).level,
-    statusForBleed(data.print.bleedMm).level,
   ];
 
   if (levels.every((level) => level === "green")) {
@@ -457,7 +450,6 @@ function renderMetrics(metrics) {
   setMetric(els.dpiMetric, els.dpiStatus, `${Math.round(metrics.dpi.effective)} DPI`, statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets));
   setMetric(els.sharpMetric, els.sharpStatus, sharpnessWord(metrics.sharpness), statusForSharpness(metrics.sharpness));
   setMetric(els.noiseMetric, els.noiseStatus, noiseWord(metrics.noise), statusForNoise(metrics.noise));
-  setMetric(els.bleedMetric, els.bleedStatus, `${metrics.print.bleedMm} mm`, statusForBleed(metrics.print.bleedMm));
   renderImageInfo(metrics);
   renderPrintSim(metrics);
   renderPrintableSizes(metrics);
@@ -476,61 +468,62 @@ function renderWorkflowOrder(metrics) {
 function chooseWorkflow(metrics) {
   if (metrics.print.needsEditableLayers && metrics.print.isLogoAsset) {
     return {
-      summary: "If a logo / icon also needs object edits, handle the layout and layers first, then come back to check resolution; only vectorize for very large output, recoloring or splitting objects, or when the shop asks.",
+      summary: "If a logo / icon also needs object edits, do the layout and layers first, then come back to check resolution. Save vectorizing for very large output, recoloring/splitting objects, or when the print shop asks for it.",
       steps: [
-        "First confirm the output size, orientation, proportions, margins and bleed.",
-        "If you need to rearrange objects or change the layout, do it first with Canva Magic layers or Photopea / Illustrator.",
-        "Come back to this tool to check the effective DPI; if it's too low, upscale with Upscayl first — this is the simplest route for most print jobs.",
-        "Only consider Inkscape Trace Bitmap when you need very large sizes, long-term repeated use, recoloring or splitting objects, or the shop asks for a vector file.",
-        "Finally, zoom to 100% and check edges, shadows and fine details.",
+        "First confirm the output size, orientation, ratio, and margins.",
+        "If you need to rearrange objects or rework the layout, use Canva Magic Layers or Photopea / Illustrator first.",
+        "Come back here to check effective DPI; if it's too low, upscale with Upscayl first — that's the simplest route for most print jobs.",
+        "Only consider Inkscape Trace Bitmap when you need very large sizes, long-term reuse, recoloring/splitting objects, or the print shop asks for a vector file.",
+        "Finally, zoom to 100% and check edges, shadows, and details.",
       ],
     };
   }
 
   if (metrics.print.needsEditableLayers) {
     return {
-      summary: "When you need to split layers, do the things that change the layout first, then upscale; that keeps the file smaller and easier for Canva / Photopea to handle.",
+      summary: "When you need to split layers, do the layout-changing work first, then upscale; this keeps the file smaller and easier for Canva / Photopea to handle.",
       steps: [
-        "First confirm the output size, orientation, proportions, margins and whether you need bleed.",
-        "Use Canva Magic layers to roughly split out the objects.",
-        "First tidy up the layers, rearrange the text, and adjust the objects and layout.",
+        "First confirm the output size, orientation, ratio, and margins.",
+        "Use Canva Magic Layers to roughly split the objects.",
+        "Tidy up layers, rearrange text, and adjust objects and layout first.",
         "Export a high-resolution PNG or PDF.",
-        "Come back to this tool and re-check the effective DPI; if it's too low, upscale with Upscayl.",
-        "Finally do a light denoise / sharpen, then zoom to 100% to check the details.",
+        "Come back here and re-check effective DPI; if it's too low, upscale with Upscayl.",
+        "Finally, lightly clean up grain / sharpen, then zoom to 100% to check details.",
       ],
     };
   }
 
   if (metrics.print.isLogoAsset) {
     return {
-      summary: "For logos / icons / badges, go the high-resolution PNG/PDF route first; vectorizing is an advanced option, not a must for printing.",
+      summary: "Logos / icons / badges should go the high-resolution PNG/PDF route first; vectorizing is an advanced option, not a must for printing.",
       steps: [
-        "First use this tool to confirm the effective DPI, bleed and color risks.",
-        "If the DPI is too low, upscale with Upscayl first — usually faster than forcing a vector conversion.",
-        "After upscaling, check that the edges, sharp corners and color blocks are clean.",
-        "Only use Inkscape Trace Bitmap when you need very large output, long-term repeated use, recoloring or splitting objects, or the shop asks for a vector file.",
-        "If the vectorized result gets dirty or needs a lot of node editing, go back to the high-resolution PNG/PDF route.",
-        "Finally, confirm CMYK, PDF/X and bleed according to your print shop's specs.",
+        "First use this tool to confirm effective DPI and sharpness.",
+        "If DPI is too low, upscale with Upscayl first — usually faster than forcing a vector conversion.",
+        "After upscaling, check that edges, sharp corners, and color blocks are clean.",
+        "Only use Inkscape Trace Bitmap when you need very large output, long-term reuse, recoloring/splitting objects, or the print shop asks for a vector file.",
+        "If the vectorized result gets dirty or needs a lot of node fixing, go back to the high-resolution PNG/PDF route.",
+        "Finally, hand it to the print shop to confirm printable formats and trim requirements.",
       ],
     };
   }
 
   return {
-    summary: "For a typical AI poster or character image, handle the layout first, then upscale; do the print-output check last.",
+    summary: "For a typical AI poster or character image, handle the layout first, then upscale; do the print output check last.",
     steps: [
-      "First decide the output size, orientation and proportions, and confirm whether you need cropping, a background fill, or bleed.",
-      "Do the things that change the layout first, such as cropping, filling in the background, or rearranging text or objects.",
-      "Come back to this tool to check the effective DPI; if it's too low, upscale with Upscayl.",
-      "After upscaling, do a light denoise and sharpen, so you don't finish your fixes and then have them ruined by upscaling.",
-      "Zoom to 100% and check faces, edges, shadows and details.",
-      "Finally, handle CMYK, PDF/X or other delivery formats according to your print shop's specs.",
+      "First decide the output size, orientation, and ratio, and confirm whether you need to crop or extend the background.",
+      "Do the layout-changing work first, such as cropping, extending the background, or rearranging text or objects.",
+      "Come back here to check effective DPI; if it's too low, upscale with Upscayl.",
+      "After upscaling, lightly clean up grain and sharpen, so you don't fix it first and then ruin it by upscaling.",
+      "Zoom to 100% and check faces, edges, shadows, and details.",
+      "Finally, handle CMYK, PDF/X, or other delivery formats per the print shop's specs.",
     ],
   };
 }
 
-// Turn the center preview image into an "after-printing sharpness" comparison:
-// left = the sharpness this size should have (the threshold DPI), right = your file's actual detail.
-// The amount of blur is based on "the threshold for this size" (which already includes viewing distance), so a large image at low DPI isn't wrongly judged as very blurry.
+// Turn the center preview image into an "after-print sharpness" comparison:
+// left = the sharpness this size should have (target DPI), right = your file's actual detail.
+// The blur amount is based on "the target for this size" (which already accounts for viewing distance),
+// so a large image at low DPI won't be wrongly judged as very blurry.
 function renderPrintSim(metrics) {
   const src = state.image;
   if (!src) return;
@@ -548,9 +541,9 @@ function renderPrintSim(metrics) {
   const target = metrics.print.dpiTargets.green;
   const ratio = clamp(metrics.dpi.effective / target, 0, 1);
 
-  // The "your file's actual detail" layer uses the same <img>, applying a matching CSS blur based on how much resolution is missing (illustrative).
-  // We no longer redraw a large image onto canvas, to avoid a huge image looking worse after downscaling than the left <img>.
-  // When DPI is enough, blur = 0, so both layers are pixel-identical and you won't get a "looks blurrier even though it's fine" result.
+  // The "your file's actual" layer uses the same <img>, applying a matching CSS blur based on how much resolution is missing (for illustration only).
+  // We no longer redraw large images onto a canvas, to avoid the downscaled thumbnail looking worse than the left <img>.
+  // When DPI is enough, blur=0, the two layers are pixel-for-pixel identical, so you won't get "it's enough but looks blurrier".
   els.simActual.src = els.previewImage.src;
   const blurPx = ratio >= 0.999 ? 0 : clamp((1 - ratio) * dispW * 0.02, 0.4, 16);
   els.simActual.style.filter = blurPx ? `blur(${blurPx}px)` : "none";
@@ -566,7 +559,7 @@ function setSimSlider(value) {
   const val = clamp(value, 0, 100);
   els.previewImage.style.clipPath = `inset(0 ${100 - val}% 0 0)`;
   els.simDivider.style.left = `${val}%`;
-  // Whichever half gets bigger, that side's label is clear; the shrinking half fades out and disappears at the very end (this replaces the instructions).
+  // Whichever half grows, that label gets clearer; the shrinking half fades out, and disappears when you drag all the way (replacing instructions).
   els.simTagLeft.style.opacity = clamp((val / 100) * 1.6, 0, 1);
   els.simTagRight.style.opacity = clamp(((100 - val) / 100) * 1.6, 0, 1);
 }
@@ -575,10 +568,10 @@ function renderSimCaption(metrics, ratio) {
   const eff = Math.round(metrics.dpi.effective);
   const target = metrics.print.dpiTargets.green;
   if (ratio >= 0.999) {
-    els.simCaption.textContent = `Your image is ${eff} DPI, which already meets the ${target} DPI this size needs — the print will look almost the same as on screen, no blur.`;
+    els.simCaption.textContent = `Your image is ${eff} DPI, which meets the ${target} DPI this size needs — in print it'll look almost the same as on screen, no blur.`;
   } else {
     const pct = Math.round(ratio * 100);
-    els.simCaption.textContent = `Your image is ${eff} DPI, but this size really wants ${target} DPI — the print will be a bit softer than on screen, with only about ${pct}% of the detail left (illustrative only; the print shop has the final say).`;
+    els.simCaption.textContent = `Your image is ${eff} DPI, but this size suggests ${target} DPI — in print it'll look a bit softer than on screen, with only about ${pct}% of the detail left (illustration only; the print shop's result is final).`;
   }
 }
 
@@ -630,7 +623,7 @@ function statusForSharpness(sharpness) {
   return { level: "red", label: "Sharpen it" };
 }
 
-// Big label: a plain-language take on whether the source itself is sharp (separate from resolution — even at enough DPI, an image that was shot or drawn blurry still looks soft)
+// Big text: describe in plain words "whether the original image itself is sharp enough" (independent of resolution; even with enough DPI, a blurry shot/render still looks soft)
 function sharpnessWord(sharpness) {
   if (sharpness >= 10) return "Sharp";
   if (sharpness >= 5) return "A bit soft";
@@ -639,69 +632,58 @@ function sharpnessWord(sharpness) {
 
 function statusForNoise(noise) {
   if (noise.speckleRatio < 0.08) return { level: "green", label: "Good to go" };
-  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "Light denoise" };
-  return { level: "red", label: "Denoise it" };
+  if (noise.speckleRatio < 0.18) return { level: "yellow", label: "Clean up first" };
+  return { level: "red", label: "Clean it up" };
 }
 
-// Big label: a plain-language take on how much "AI noise / JPEG compression specks" there is (you can't see it in the comparison image, so it's judged separately)
+// Big text: describe in plain words how much "grain / specks AI images often have" there is (rare in traditional print images, and you can't tell from the comparison view)
 function noiseWord(noise) {
   if (noise.speckleRatio < 0.08) return "Clean";
-  if (noise.speckleRatio < 0.18) return "Some noise";
-  return "Noisy";
-}
-
-function statusForBleed(bleed) {
-  if (bleed >= 3) return { level: "green", label: "Standard" };
-  if (bleed > 0) return { level: "yellow", label: "A bit short" };
-  return { level: "red", label: "No bleed" };
+  if (noise.speckleRatio < 0.18) return "Some grain";
+  return "Grainy";
 }
 
 function renderAdvice(metrics) {
   const advice = [];
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const bleedStatus = statusForBleed(metrics.print.bleedMm);
 
   const dpiTargets = metrics.print.dpiTargets;
   if (dpiStatus.level === "red") {
-    advice.push("The effective DPI is too low. This is estimated from the output size; upscale with super-resolution first, or reduce the output size.");
+    advice.push("Effective DPI is too low. This is estimated from your output size, so consider upscaling first, or reducing the output size.");
   } else if (dpiStatus.level === "yellow") {
-    advice.push("The effective DPI is right at the edge of acceptable; zoom to 100% yourself and check faces, text and edge details.");
+    advice.push("Effective DPI is right at the acceptable edge; zoom to 100% and check faces, text, and edge details yourself.");
   } else if (metrics.dpi.effective > dpiTargets.green * 1.5) {
-    advice.push(`The effective DPI is already far above what this size needs (this size only needs about ${dpiTargets.green} DPI). The extra resolution won't make the print sharper — it just gives you room to scale up or down — so there's no need to chase higher; for example, taking a small image up to 1000 DPI doesn't help.`);
+    advice.push(`Effective DPI is already far above what this size needs (about ${dpiTargets.green} DPI is enough for this size). The extra resolution won't make the print sharper — it just gives you room to scale up or down — so there's no need to chase a higher number; for example, taking a small image to 1000 DPI doesn't help.`);
   } else {
-    advice.push("At the current output size, the effective DPI meets the threshold for this use.");
+    advice.push("Based on the current output size, effective DPI already meets the target for this use.");
   }
 
   if (sharpStatus.level !== "green") {
-    advice.push("There's still room to improve the sharpness; if it includes character faces, logo edges or important details, zoom in locally to check, and apply a light sharpen if needed.");
+    advice.push("Sharpness could still be improved. If the image has character faces, logo edges, or important details, zoom in locally to check and apply light sharpening if needed.");
   }
 
   const noiseStatus = statusForNoise(metrics.noise);
   if (noiseStatus.level === "yellow") {
-    advice.push("Compression/noise is acceptable but could still be improved; do a light denoise before output. If Photopea's Reduce Noise does nothing, try Surface Blur or Median instead.");
+    advice.push("There's some grain/specks (common in AI images) — acceptable but still improvable, so lightly clean it up before output; use Photopea's Reduce Noise (clean up specks); if nothing happens, try Surface Blur or Median.");
   } else if (noiseStatus.level === "red") {
-    advice.push("Compression/noise is on the high side; denoise first, or use a cleaner source image. If Photopea's Reduce Noise does nothing, first make sure the layer is rasterized.");
+    advice.push("There's a lot of grain/specks (common in AI images). Clean it up first with Photopea's Reduce Noise (clean up specks), or switch to a cleaner source image; if nothing happens, first make sure the layer is rasterized.");
   }
 
-  advice.push("This tool doesn't judge color: screens are RGB and prints usually shift a little (bright blue, bright green and neon colors are the most obvious), so the print shop has the final say on actual color.");
+  advice.push("This tool doesn't evaluate color: the screen is RGB, and prints usually shift a little (bright blues, bright greens, and neon colors show it most). The print shop's result is what counts.");
 
-  if (bleedStatus.level !== "green") {
-    advice.push("The bleed isn't enough; for common posters, stickers and business cards, at least 3 mm is recommended.");
-  } else {
-    advice.push("The bleed value meets the common standard, but this only checks the bleed value you entered — you still need to make sure the background extends past the bleed line.");
-  }
+  advice.push("Bleed is the trim margin; AI images usually don't have it. If you're printing right to the paper's edge (business cards, stickers, full-bleed posters), just tell the print shop and let them add the margin.");
 
   if (metrics.print.isLogoAsset) {
-    advice.push("This image is marked as a logo / icon / badge asset; for most print jobs a high-resolution PNG/PDF is enough. Only consider vectorizing for very large output, long-term repeated use, recoloring or splitting objects, or when the shop asks.");
+    advice.push("This image is marked as a logo / icon / badge asset; for most print jobs a high-resolution PNG/PDF is enough. Only consider vectorizing for very large output, long-term reuse, recoloring/splitting objects, or when the print shop asks for it.");
   }
 
   if (metrics.print.needsEditableLayers) {
-    advice.push("This image is marked as needing editable layers; you could use Canva Magic layers for a rough split, but the result still needs manual review and tidying.");
+    advice.push("This image is marked as needing editable layers; you could use Canva Magic Layers for a rough split. The result still needs a manual check and tidy-up.");
   }
 
-  if (dpiStatus.level === "green" && bleedStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
-    advice.push("All the main metrics are green; zoom to 100% and check shadows, edges and details — if it's fine, it's ready to print.");
+  if (dpiStatus.level === "green" && sharpStatus.level === "green" && noiseStatus.level === "green") {
+    advice.push("All the main metrics are green. Zoom to 100% to check shadows, edges, and details, and if it's fine you're ready to print.");
   }
 
   els.adviceList.innerHTML = advice.map((item) => `<li>${item}</li>`).join("");
@@ -755,9 +737,9 @@ function renderActiveFix(fixes) {
 
   if (!fix) {
     els.fixStepLabel.textContent = "Step 1";
-    els.fixStepTitle.textContent = "Waiting for analysis";
-    els.fixStepSummary.textContent = "After you upload an image, the full walkthrough for each single step will show up here.";
-    els.fixStepTrustNote.textContent = "Tool notes will appear here.";
+    els.fixStepTitle.textContent = "Waiting for evaluation";
+    els.fixStepSummary.textContent = "Upload an image to see the full walkthrough for a single step.";
+    els.fixStepTrustNote.textContent = "Tool notes will show up here.";
     els.fixStepTrustNote.style.display = "block";
     els.fixStepList.innerHTML = "<li>Upload an AI image first.</li>";
     renderExtraGuides([]);
@@ -790,7 +772,7 @@ function renderActiveFix(fixes) {
 function formatTrustNote(note, versionHint = true) {
   if (!note) return "";
   if (!versionHint) return note;
-  return `${note} Menu names may differ slightly across versions or interface languages; if you can't find an option, take a screenshot and ask ChatGPT or Gemini, or check it against the official docs.`;
+  return `${note} Menu names may differ slightly across versions or language interfaces; if you can't find an option, screenshot it and ask ChatGPT or Gemini, or check against the official docs.`;
 }
 
 function shortFixTitle(title) {
@@ -806,7 +788,7 @@ function renderExtraGuides(guides) {
 
   els.fixExtraGuides.hidden = false;
   els.fixExtraGuides.innerHTML = [
-    "<p>Pick one in-depth setup based on your image type:</p>",
+    "<p>Pick one detailed setup based on your image type:</p>",
     '<div class="guide-chip-list">',
     ...guides.map((guide, index) => `<button class="guide-chip" type="button" data-guide-index="${index}">${guide.label}</button>`),
     "</div>",
@@ -860,7 +842,7 @@ function openGuideModal(guide, trigger) {
   els.guideModalEyebrow.textContent = guide.eyebrow || "Guide";
   els.guideModalTitle.textContent = guide.title;
   els.guideModalSummary.textContent = guide.summary || "";
-  const versionNote = guide.versionHint === false ? "" : '<p class="guide-version-note">Menu names may differ slightly across versions or interface languages; if you can\'t find an option, take a screenshot and ask ChatGPT or Gemini, or check it against the official docs.</p>';
+  const versionNote = guide.versionHint === false ? "" : '<p class="guide-version-note">Menu names may differ slightly across versions or language interfaces; if you can\'t find an option, screenshot it and ask ChatGPT or Gemini, or check against the official docs.</p>';
   els.guideModalContent.innerHTML = versionNote + guide.sections
     .map((section) => {
       const items = section.items.map((item) => `<li>${item}</li>`).join("");
@@ -884,46 +866,46 @@ function closeGuideModal() {
 function vectorTutorialGuide() {
   return {
     eyebrow: "Advanced SVG",
-    title: "I want to vectorize: Inkscape SVG tutorial",
-    summary: "This is an advanced tutorial and won't go into this tool's scoring. It's for people who genuinely need an SVG / PDF vector delivery, very large output, recoloring or splitting objects, or long-term repeated use.",
+    title: "I want to convert to vector: Inkscape SVG tutorial",
+    summary: "This is an advanced tutorial and won't enter this tool's scoring. It suits people who genuinely need SVG / PDF vector delivery, very large output, recoloring/splitting objects, or long-term reuse.",
     sections: [
       {
         title: "First decide whether it's worth it",
         items: [
-          "Good fit: logos, icons, badges, single-color silhouettes, and symbols with clear edges and simple color blocks.",
-          "Bad fit: heavily painted character art, photos, smoke, lighting, lots of gradients, or AI illustrations with lots of fine texture.",
-          "For a normal poster, sticker or canvas print, upscaling to a high-resolution PNG/PDF with Upscayl is usually faster than vectorizing.",
-          "If after converting the edges get dirty, sharp corners get rounded off, or the file is very heavy, go back to the high-resolution PNG/PDF route instead of forcing it.",
+          "Good for: logos, icons, badges, single-color silhouettes, and symbols with clear edges and simple color blocks.",
+          "Not good for: heavily painted character art, photos, smoke, lighting effects, lots of gradients, or AI illustrations with lots of fine texture.",
+          "For a typical poster, sticker, or canvas print, upscaling to a high-resolution PNG/PDF with Upscayl is usually faster than converting to vector.",
+          "If after converting the edges get dirty, sharp corners get rounded off, or the file is heavy, go back to the high-resolution PNG/PDF route — don't force it.",
         ],
       },
       {
         title: "Download and open the image",
         items: [
           'Go to the <a href="https://inkscape.org/release/inkscape-1.4.4/" target="_blank" rel="noopener noreferrer">official Inkscape 1.4.4 download page</a>.',
-          "Windows users click Windows > 64-bit > Windows Installer Package / msi in order.",
-          "MSI is a Windows installer format, not an MSI graphics card; just follow the normal install steps and click Next.",
-          "After opening Inkscape, click \"Open other file...\" or use \"File > Open\" to import the image.",
-          "When you see the JPEG/PNG import settings, you can usually keep the defaults and click OK.",
+          "Windows users: click Windows > 64-bit > Windows Installer Package / msi in order.",
+          "MSI is a Windows installer package format, not an MSI graphics card; just follow the normal install steps and click Next.",
+          'After opening Inkscape, you can click "Open Other File..." or use "File > Open" to import the image.',
+          "When you see the import settings for JPEG/PNG, you can usually keep the defaults and click OK.",
         ],
       },
       {
-        title: "Trace starting settings",
+        title: "Tracing starter settings",
         items: [
-          "With the image selected, open \"Path > Trace Bitmap\".",
-          "Black-and-white logo / single-color icon: use \"Single Scan\" with \"Brightness cutoff\", and start the threshold at 0.55.",
-          "Color badge / multi-color icon: use \"Multiple Scans\" with \"Colors\", and start with 4 to 8 colors.",
-          "When the background is white or a checkerboard, try \"Remove background\"; if it doesn't work well, ungroup after tracing and delete it by hand.",
-          "When the preview looks clean, click \"Apply\"; if the preview already looks dirty, it usually means it's not a good fit for forcing a conversion.",
+          'With the image selected, open "Path > Trace Bitmap".',
+          'Black-and-white logo / single-color icon: use "Single Scan" with "Brightness cutoff", and try a threshold of 0.55 first.',
+          'Color badge / multi-color icon: use "Multiple Scans" with "Colors", and try 4 to 8 colors for the scan count first.',
+          'When the background is white or a checkerboard, try "Remove background"; if the result isn\'t good, ungroup after tracing and delete it manually.',
+          'Click "Apply" once the preview looks clean; if the preview is already dirty, it usually means the image isn\'t a good fit for forcing a conversion.',
         ],
       },
       {
         title: "Clean up and export",
         items: [
-          "After applying, drag the vector aside and check whether the original JPG, checkerboard background or watermark is still underneath.",
-          "If the background and the main subject are grouped together, use \"Object > Ungroup\" first, then delete the extra objects.",
-          "Zoom in to check sharp corners, thin lines, holes, color regions and any leftover watermark.",
-          "Use \"File > Save As\" to save as SVG; to hand off to a print shop, you can save as PDF, or ask the shop to convert to AI/PDF for you.",
-          "A converted SVG doesn't need this tool's scoring; check it by zooming in within Inkscape / Illustrator, or let the print shop confirm the delivery format and output specs.",
+          "After applying, drag the vector image aside and check whether the original JPG, the checkerboard background, or a watermark is still underneath.",
+          'If the background and main image are grouped together, use "Object > Ungroup" first, then delete the extra objects.',
+          "Zoom in and check sharp corners, thin lines, holes, color regions, and any leftover watermark.",
+          'Use "File > Save As" to save as SVG; to hand off to the print shop, you can save a PDF, or ask the shop to convert to AI/PDF for you.',
+          "Once you've converted to SVG, you don't need to bring it back here for scoring; check it zoomed in within Inkscape / Illustrator, or let the print shop confirm the delivery format and output specs.",
         ],
       },
     ],
@@ -946,7 +928,7 @@ function getNoisePreset(noise) {
       strength: 4,
       protectDetail: 45,
       colorNoise: 10,
-      note: "The noise is currently acceptable, so use a light setting; the priority is keeping the texture and thin lines.",
+      note: "The grain is in the acceptable range for now, so start with a light setting — the priority is keeping texture and fine lines.",
     };
   }
   if (noise.speckleRatio < 0.18) {
@@ -955,7 +937,7 @@ function getNoisePreset(noise) {
       strength: 6,
       protectDetail: 35,
       colorNoise: 15,
-      note: "The noise is already affecting the shadows, so use a medium setting, then use the preview to make sure details aren't smeared away.",
+      note: "The grain is already affecting the shadows, so start with a medium setting, then use the preview to confirm the details aren't smoothed away.",
     };
   }
   return {
@@ -963,7 +945,7 @@ function getNoisePreset(noise) {
     strength: 8,
     protectDetail: 25,
     colorNoise: 20,
-    note: "The noise is on the high side, but still don't max it out in one go; deal with the specks first, then check edges and text.",
+    note: "There's a lot of grain, but still don't max it out in one go; clean up the specks first, then check edges and text.",
   };
 }
 
@@ -977,13 +959,13 @@ function getUpscalePreset(metrics) {
   const outputWidth = metrics.pixelWidth * scale;
   const outputHeight = metrics.pixelHeight * scale;
 
-  let caution = "2x is usually the most natural and less likely to show AI-upscaling artifacts in the detail.";
+  let caution = "2x is usually the most natural, and details are less likely to show AI-upscaling artifacts.";
   if (scale === 4) {
-    caution = "4x can make up a bigger DPI gap, but check faces, text and edges for fake detail.";
+    caution = "4x can fill a larger DPI gap, but check faces, text, and edges for fake details.";
   } else if (scale === 8) {
-    caution = "8x easily produces fake detail or fails outright; see if you can reduce the output size first, and only use 8x when you have to.";
+    caution = "8x easily produces fake details or fails to process; consider whether you can reduce the output size first, and only use 8x when necessary.";
   } else if (scale === 1) {
-    caution = "The DPI is already close to the target, so you usually don't need to upscale; if you just want to be safer, zoom to 100% and check it yourself.";
+    caution = "Your DPI is already close to the target, so you usually don't need to upscale; if you just want to be safe, zoom to 100% and check it yourself first.";
   }
 
   return {
@@ -1006,7 +988,7 @@ function chooseFixPlan(metrics) {
     const ok = finalCheckFix();
     return {
       title: "Ready to print",
-      summary: "The main risks are all below the warning line; before printing, just zoom in and check the key areas yourself.",
+      summary: "The main risks are all below the warning line; just zoom in and check the key areas yourself before printing.",
       steps: [`${ok.title}：${ok.summary}`],
       fixes: [ok],
       primaryFix: ok,
@@ -1015,7 +997,7 @@ function chooseFixPlan(metrics) {
 
   return {
     title: "Suggested fix order",
-    summary: "The following is in the suggested order. Do the steps that change the layout or structure first, then upscaling and detail fixes.",
+    summary: "These are listed in the suggested order. Do the steps that change the layout or structure first, then upscaling and detail fixes.",
     steps: fixes.map((fix) => `${fix.title}：${fix.summary}`),
     fixes,
     primaryFix,
@@ -1025,12 +1007,10 @@ function chooseFixPlan(metrics) {
 function collectFixes(metrics) {
   const dpiStatus = statusForDpi(metrics.dpi.effective, metrics.print.dpiTargets);
   const sharpStatus = statusForSharpness(metrics.sharpness);
-  const bleedStatus = statusForBleed(metrics.print.bleedMm);
   const noiseStatus = statusForNoise(metrics.noise);
   const fixes = [];
 
   if (metrics.print.needsEditableLayers) fixes.push(canvaFix());
-  if (bleedStatus.level !== "green") fixes.push(bleedFix());
   if (dpiStatus.level === "red" || dpiStatus.level === "yellow") fixes.push(upscaleFix(metrics));
   if (sharpStatus.level === "red") fixes.push(sharpenFix());
   if (noiseStatus.level !== "green") fixes.push(noiseFix(metrics));
@@ -1041,73 +1021,57 @@ function collectFixes(metrics) {
 function upscaleFix(metrics) {
   const upscale = getUpscalePreset(metrics);
   const isLogoAsset = metrics.print.isLogoAsset;
-  const title = "Fix resolution: download the Upscayl desktop app";
-  const summary = `The current effective DPI is about ${upscale.currentDpi}, and this use wants around ${upscale.targetDpi} DPI. Start with a ${upscale.scale}x upscale, which should reach about ${upscale.expectedDpi} DPI.${
-    isLogoAsset ? " For most logo / badge print jobs this is the simplest main route; you can leave vectorizing for when you need very large output or to recolor / split objects." : ""
+  const title = "Fix resolution：download Upscayl desktop";
+  const summary = `Effective DPI is currently about ${upscale.currentDpi}, and this use suggests reaching about ${upscale.targetDpi} DPI. Start with ${upscale.scale}x upscaling, which should reach about ${upscale.expectedDpi} DPI.${
+    isLogoAsset ? " This is the most effortless main route for most logo / badge print jobs; you can save vectorizing for when you need very large output or to recolor/split objects." : ""
   }`;
   const trustNote = isLogoAsset
-    ? "For most logos / icons, if it's just a poster, sticker or signage output, a high-resolution PNG/PDF is usually enough. You only need to vectorize separately when you need long-term repeated use, free recoloring, splitting objects, or the shop explicitly asks for a vector file. Upscayl is a free, open-source AI image-upscaling desktop app, good for getting a low-resolution image up to the printable threshold first."
-    : "Upscayl is a free, open-source AI image-upscaling desktop app; images are processed on your own computer, and it's good for getting a low-resolution AI image up close to print requirements first. Speed depends on your computer's CPU/GPU, so if your computer is on the slow side, use 2x first.";
+    ? "For most logos / icons, if they're just for poster, sticker, or sign output, a high-resolution PNG/PDF is usually enough. You only need to vectorize separately when you need long-term reuse, free recoloring, splitting objects, or the print shop specifically asks for a vector file. Upscayl is a free, open-source AI image-upscaling desktop app, good for bringing a low-resolution image up to the printable threshold first."
+    : "Upscayl is a free, open-source AI image-upscaling desktop app. The image is processed locally on your own computer, which is good for bringing a low-resolution AI image up close to print requirements first. Processing speed depends on your computer's CPU/GPU; if your computer is slow, start with 2x.";
   const steps = [
-    "Open the Upscayl download page and download the Windows desktop app.",
-    "After installing, open Upscayl on your computer; you don't need to use the online Dashboard.",
-    "If you see credits, Start free trial or Upgrade on screen, you're on the cloud version — go back to the download page and get the desktop app instead.",
+    "Open the Upscayl download page and download the Windows desktop version.",
+    "After installing, open Upscayl on your computer — you don't need to use the online Dashboard.",
+    "If you see credits, Start free trial, or Upgrade, you're on the cloud version; go back to the download page and get the desktop version instead.",
     "Import the original image.",
-    `For Resolution Scale, start with ${upscale.scale}x. The output should be about ${upscale.outputWidth} x ${upscale.outputHeight} px.`,
+    `For Resolution Scale, start with ${upscale.scale}x. Estimated output is about ${upscale.outputWidth} x ${upscale.outputHeight} px.`,
     upscale.caution,
-    "For Model, start with Upscayl Standard; for character faces you can also try another model and compare the detail.",
-    "Set Output Format to PNG; avoid low-quality JPG.",
-    "After exporting, zoom in to check faces, edges, lines and shadows — don't just look at the thumbnail.",
-    "Come back to this tool and click re-upload the fixed version to check the score.",
+    "For Model, start with Upscayl Standard; for character faces you can also test another model and compare the detail.",
+    "Set Output Format to PNG, to avoid low-quality JPG.",
+    "After output, zoom in and check faces, edges, lines, and shadows — don't just look at the thumbnail.",
+    "Come back here, click re-upload the fixed version, and check the score.",
   ];
 
   return {
     title,
     summary,
     trustNote,
-    linkText: "Download the free desktop app",
+    linkText: "Download the free desktop version",
     url: "https://upscayl.io/",
     steps,
   };
 }
 
-function bleedFix() {
-  return {
-    title: "Add bleed: adjust the canvas in Photopea",
-    summary: "Too little bleed leaves a white edge after trimming. Enlarge the canvas first and keep important content within the safe area.",
-    trustNote: "Photopea is a browser-based image editor that works much like Photoshop, good for cropping, canvas size, bleed, simple sharpening and export. For proper CMYK, still follow your print shop's specs.",
-    linkText: "Go to Photopea",
-    url: "https://www.photopea.com/",
-    steps: [
-      "In Photopea, use File > Open to open the image.",
-      "Use Image > Canvas Size to add 3 mm on each side (left, right, top, bottom).",
-      "Extend the background or image into the bleed area; keep text and logos away from the edge.",
-      "Export a PNG or PDF, then come back and re-check.",
-    ],
-  };
-}
-
 function sharpenFix() {
   return {
-    title: "Fix blur: sharpen in Photopea",
-    summary: "When the image is soft, it shows up even more in print. Do a light sharpen first, and check faces, lines and text at 100%.",
-    trustNote: "Photopea lets you do basic retouching right in the browser, with no big software to install. Sharpening can only improve how the edges look — it can't truly bring back detail that isn't there.",
+    title: "Reduce blur：sharpen in Photopea",
+    summary: "When the image is soft, it shows up more in print. Do light sharpening first, and check faces, lines, and text locally at 100%.",
+    trustNote: "Photopea does basic photo editing right in the browser, with no big software to install. Sharpening can only improve how the edges look — it can't actually bring back detail that isn't there.",
     linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
       "Open the image in Photopea.",
       "Use Filter > Sharpen > Smart Sharpen or Sharpen.",
       "Don't over-sharpen, to avoid white halos or specks on the edges.",
-      "Export a PNG, then come back and re-check.",
+      "Export a PNG, then come back to re-evaluate.",
     ],
   };
 }
 
 function canvaFix() {
   return {
-    title: "Split into editable layers: use Canva Magic layers",
-    summary: "Use Canva Magic layers for a rough split first, then manually tidy up the objects, text and layout.",
-    trustNote: "Canva Magic layers are good for roughly splitting an image into editable elements, making it easier to rearrange, replace or tweak afterward. It isn't professional vectorizing and won't perfectly separate every object; complex heavy painting, smoke, hair strands or fine lighting still need manual review.",
+    title: "Split into editable layers：use Canva Magic Layers",
+    summary: "Use Canva Magic Layers for a rough split first, then manually tidy up the objects, text, and layout.",
+    trustNote: "Canva Magic Layers is good for roughly splitting an image into editable elements so you can rearrange, replace, or tweak later. It's not professional vectorizing and doesn't guarantee a perfect separation of every object; complex heavy painting, smoke, hair strands, or fine light effects still need a manual check.",
     linkText: "Go to Canva",
     url: "https://www.canva.com/",
     steps: [
@@ -1115,66 +1079,66 @@ function canvaFix() {
       "Upload the image and place it on the canvas.",
       "Click the image.",
       "Click Edit image.",
-      "In the tools, choose Magic layers.",
+      "In the tools, choose Magic Layers.",
       "Wait for Canva to roughly split the layers.",
-      "Check whether each layer was split sensibly, and manually delete, rearrange or fix as needed.",
-      "If it's for print, you still need to confirm the size, bleed, resolution and the print shop's output specs at the end.",
+      "Check whether each layer is split sensibly, and manually delete, rearrange, or fix as needed.",
+      "If you're printing, you still need to confirm the size, resolution, and the print shop's output specs at the end.",
     ],
   };
 }
 
 function inkscapeFix() {
   return {
-    title: "Vectorize the icon: use Inkscape Trace Bitmap",
-    summary: "If a logo / icon / badge has clear edges and simple color blocks, you can convert it to SVG for free in Inkscape first.",
-    trustNote: "Inkscape is free, open-source vector drawing software. Open-source means the source code is public, so the community can inspect and improve it — more transparent than a sketchy file-conversion website; still, only download from the official inkscape.org page. Its built-in Trace Bitmap can trace a raster image into SVG, good for logos, silhouettes, badges, icons and flat assets; not good for heavily painted character art, photos or complex gradients.",
+    title: "Vectorize an icon：use Inkscape Trace Bitmap",
+    summary: "If a logo / icon / badge has clear edges and simple color blocks, you can convert it to SVG for free with Inkscape first.",
+    trustNote: "Inkscape is free, open-source vector drawing software. Open-source means the source code is public, so the community can inspect and improve it — more transparent than a sketchy conversion website; still, only download from the official inkscape.org page. It includes Trace Bitmap, which can trace a raster image into SVG, good for logos, silhouettes, badges, icons, and flat assets; not good for heavily painted character art, photos, or complex gradients.",
     linkText: "Go to the Inkscape 1.4.4 download page",
     url: "https://inkscape.org/release/inkscape-1.4.4/",
     steps: [
-      "Download Inkscape: choose Windows > 64-bit > Windows Installer Package / msi, install it, and open it.",
-      "If you see the start screen, switch to \"Start creating\" and choose \"Open other file...\" to open the image.",
-      "If you're already on a blank canvas, use \"File > Import\" to place the image on the canvas.",
-      "Click the image once and confirm it has a selection box; if it isn't selected, Trace Bitmap may not work.",
-      "From the top menu choose \"Path > Trace Bitmap\".",
-      "Click the in-depth setup below based on your image type: black-and-white logo, color badge, or result check.",
-      "Click \"Preview\" to see the result first; when the edges are clean, click \"Apply\".",
-        "After applying, drag the top object aside and check which one is the original and which is the vector result.",
-        "If the checkerboard background or watermark also got traced, ungroup first, then select and delete the extra background objects.",
-        "Use \"File > Save As\" to save as SVG; to hand off to a print shop, you can save as PDF.",
-        "If the vector result is very dirty, the file is very heavy, or it looks very different from the original, switch to high-resolution PNG/PDF instead of forcing it.",
+      "Download Inkscape: choose Windows > 64-bit > Windows Installer Package / msi, then install and open it.",
+      'If you see the start screen, switch to "Start creating", choose "Open Other File..." and open the image.',
+      'If you\'re already on a blank canvas, use "File > Import" to place the image onto the canvas.',
+      "Click the image once and confirm there's a selection box around it; if it's not selected, Trace Bitmap may not work.",
+      'From the top menu, choose "Path > Trace Bitmap".',
+      "Click a detailed setup below based on your image type: black-and-white logo, color badge, or result check.",
+      'Click "Preview" to see the result first; once the edges are clean, click "Apply".',
+        "After applying, drag the top object aside to check, and confirm which is the original and which is the vector result.",
+        "If the checkerboard background or a watermark was also traced, separate/ungroup first, then select and delete the extra background objects.",
+        'Use "File > Save As" to save as SVG; to hand off to the print shop, you can save a PDF.',
+        "If the vector result is dirty, the file is heavy, or it differs a lot from the original, switch to a high-resolution PNG/PDF — don't force it.",
     ],
     extraGuides: [
       {
         label: "Black-and-white logo / single-color icon",
         eyebrow: "Trace Bitmap",
-        title: "How to set up a black-and-white logo or single-color icon?",
-        summary: "Good for black-and-white marks, silhouettes, single-color symbols and icons with clear edges. The goal is a clean outline, not preserving every detail of the original.",
+        title: "How do I set up a black-and-white logo or single-color icon?",
+        summary: "Good for black-and-white logos, silhouettes, single-color symbols, and icons with clear edges. The goal is a clean outline, not keeping every detail of the original.",
         sections: [
           {
             title: "Suggested settings",
             items: [
-              "In \"Trace Bitmap\", choose \"Single Scan\".",
-              "For mode, start with \"Brightness cutoff\".",
-              "For \"Threshold\", start at 0.55; if it's too thin, raise it to 0.60–0.65, and if it's too thick or goes solid black, lower it to 0.45–0.50.",
-              "When the background is white, you can tick \"Remove background\", but it's not required; you can also ungroup after tracing and delete the background object.",
-              "When the edges are too jagged, turn on \"Smooth\"; when there are too many nodes, try \"Optimize\".",
+              'In "Trace Bitmap", choose "Single Scan".',
+              'Use "Brightness cutoff" for the mode first.',
+              'For "Threshold", start by trying 0.55; if it\'s too thin, raise it to 0.60–0.65, and if it\'s too thick or goes solid black, lower it to 0.45–0.50.',
+              'When the background is white, you can check "Remove background", but it\'s not required; you can also separate/ungroup after tracing and delete the background object.',
+              'When the edge jaggedness is too obvious, turn on "Smooth"; when there are too many nodes, try "Optimize".',
             ],
           },
           {
             title: "How to tell it worked",
             items: [
-              "The preview looks like a clean silhouette, with no lots of debris on the edges.",
-              "Small holes, sharp corners or thin lines weren't eaten away.",
-              "After applying, drag it aside, delete the original, and the pattern still makes sense with only the vector left.",
+              "The preview looks like a clean silhouette, with no big mess of fragments along the edges.",
+              "Small holes, sharp corners, or thin lines aren't eaten away.",
+              "After applying, drag it aside to check; delete the original and keep only the vector, and the shape is still recognizable.",
             ],
           },
           {
             title: "When it doesn't work",
             items: [
-              "If the original logo is too blurry, switch to a clearer source first; don't upscale and then force a trace.",
-              "If there are lots of edge specks, clean the white background or denoise in Photopea first, then trace in Inkscape.",
-              "If only the background got traced along with it, try ungrouping and deleting the background first; you don't necessarily have to re-trace.",
-              "If there are lots of gradients, shadows or texture, this image may not be a good fit for single-color vectorizing.",
+              "If the original logo is too blurry, switch to a clearer source image first — don't upscale and then force a trace.",
+              "If there are lots of specks along the edges, clean up the white background or denoise in Photopea first, then go back to Inkscape to trace.",
+              "If only the background got traced along with it, try separating/ungrouping and deleting the background first — you don't necessarily have to re-trace.",
+              "If there are lots of gradients, shadows, or textures, this image may not be a good fit for single-color vectorizing.",
             ],
           },
         ],
@@ -1182,33 +1146,33 @@ function inkscapeFix() {
       {
         label: "Color badge / multi-color icon",
         eyebrow: "Trace Bitmap",
-        title: "How to set up a color badge or multi-color icon?",
-        summary: "Good for badges, game icons and UI icons with clear color blocks and not too many colors. The key is to reduce colors first so the SVG doesn't turn into a pile of tiny color fragments.",
+        title: "How do I set up a color badge or multi-color icon?",
+        summary: "Good for badges, game icons, and UI icons with clear color blocks and not too many colors. The key is to reduce colors first, so the SVG doesn't turn into a pile of fragmented color blocks.",
         sections: [
           {
             title: "Suggested settings",
             items: [
-              "Choose \"Multiple Scans\" or \"Colors\" mode.",
-              "For \"Scans\", start with 8; if there aren't enough colors, try 12 or 16.",
-              "Don't open too many colors right away — the more colors, the heavier the file and the harder it is to tidy.",
-              "If there's a white, checkerboard or transparent background, try \"Remove background\"; or apply first, then ungroup and delete the background color blocks.",
-              "When the edges are too fragmented, try turning on \"Smooth\" or \"Optimize\".",
+              'Choose "Multiple Scans" or "Colors" mode.',
+              'For "Scans", try 8 first; if there aren\'t enough colors, try 12 or 16.',
+              "Don't open up too many colors at the start — the more colors, the heavier the file and the harder it is to tidy.",
+              'If there\'s a white background, checkerboard, or transparent background, try "Remove background", but you can also separate/ungroup after applying and delete the background color blocks.',
+              'When the edges are too fragmented, try turning on "Smooth" or "Optimize".',
             ],
           },
           {
             title: "How to tell it worked",
             items: [
-              "The main shapes are clear and the color regions look like the design draft, not like shattered glass.",
-              "Zoom in and the edges aren't dirty, with no excessive tiny fragments in the color blocks.",
-              "The file still moves and saves smoothly; obvious lag usually means too many nodes.",
+              "The main shapes are clear and the color regions look like a design draft, not like shattered glass.",
+              "Zoomed in, the edges aren't dirty and the color blocks don't have too many unnecessary tiny fragments.",
+              "The file still moves and saves smoothly; if it's noticeably laggy, it usually means there are too many nodes.",
             ],
           },
           {
             title: "When it doesn't work",
             items: [
               "Lower the scan count, keep the main color blocks first, and don't chase a perfect match to the original.",
-              "If the checkerboard background got traced in, ungroup first, then select and delete the background squares or watermark color blocks.",
-              "If the badge has heavy metallic texture, glow or smoke, exporting a high-resolution PNG/PDF looks more natural.",
+              "If the checkerboard background got traced in, separate/ungroup first, then select and delete the background squares or watermark color blocks.",
+              "If the badge has heavy metallic texture, glow, or smoke, exporting a high-resolution PNG/PDF will look more natural.",
               "If the print shop just needs a printable file, you don't necessarily need an SVG; you can hand the original file to the shop and ask them to convert it to PDF.",
             ],
           },
@@ -1217,30 +1181,30 @@ function inkscapeFix() {
       {
         label: "Result check / whether to still upscale",
         eyebrow: "Vector Check",
-        title: "After vectorizing, how do you tell whether resolution still needs fixing?",
-        summary: "After a successful vectorization, the logo or icon itself usually no longer cares about DPI; but when raster assets are mixed in, you still need to check those raster parts.",
+        title: "After vectorizing, how do I decide whether I still need to fix resolution?",
+        summary: "Once vectorized successfully, the logo or icon itself usually no longer cares about DPI; but when raster assets are mixed in, you still need to check those raster parts.",
         sections: [
           {
-            title: "When vectorizing succeeds",
+            title: "When vectorizing succeeded",
             items: [
-              "After dragging the vector result aside, delete the original raster image, and the vector alone is still clear.",
+              "After dragging the vector result aside, delete the original raster image — the vector alone is still clear.",
               "After saving as SVG or PDF and reopening, the edges are still clean.",
-              "A pure-vector logo / icon like this usually doesn't need upscaling with Upscayl.",
+              "This kind of pure-vector logo / icon usually doesn't need to be upscaled with Upscayl.",
             ],
           },
           {
             title: "Cases where you still need to check DPI",
             items: [
-              "The design still has a raster background, character, photo, texture, shadow or AI heavy-painted image.",
-              "In the end you're not delivering SVG/PDF, but exporting PNG or JPG.",
-              "The vectorization failed and you ended up using high-resolution PNG/PDF instead.",
+              "The design still has a raster background, characters, photos, textures, shadows, or AI heavy-painted images.",
+              "In the end you're not delivering an SVG/PDF, but exporting a PNG or JPG.",
+              "Vectorizing failed and you switched to a high-resolution PNG/PDF in the end.",
             ],
           },
           {
             title: "Final check before printing",
             items: [
-              "Save the pure-vector image as SVG; to give it to a print shop, you can save as PDF.",
-              "If it includes raster images, re-upload the output file to this tool and confirm the effective DPI.",
+              "Save the pure-vector image as SVG; to give it to the print shop, you can save a PDF.",
+              "If it includes a raster image, re-upload the output file here and confirm the effective DPI.",
               "Before a large print run, zoom to 100% yourself and check the key areas.",
             ],
           },
@@ -1253,51 +1217,51 @@ function inkscapeFix() {
 function noiseFix(metrics) {
   const preset = getNoisePreset(metrics.noise);
   return {
-    title: "Fix noise: use Photopea's fallback denoise flow",
-    summary: `For the current compression/noise, a ${preset.label} denoise is recommended. If Reduce Noise does nothing, it usually means no image layer is selected; you can also try Surface Blur or Median.`,
-    trustNote: "Photopea's filters need to be applied to a normal raster layer; if the layer is text, a shape, a smart object or a special layer, you may need to Rasterize it first. Denoising can only reduce the specks and the compressed look — it can't bring back missing detail.",
+    title: "Clean up specks：use Photopea (Reduce Noise)",
+    summary: `The image has the grain/specks AI images often have, so clean it up with a ${preset.label} strength. If Photopea's Reduce Noise (clean up specks) does nothing, you usually haven't selected the image layer; you can also try Surface Blur or Median.`,
+    trustNote: "Photopea's filters need to be applied on a normal raster layer; if the layer is text, a shape, a smart object, or a special layer, you may need to Rasterize first. Cleaning up specks can only reduce specks and compression artifacts — it can't bring back missing detail.",
     linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
       "Open the image in Photopea.",
-      "First click the image layer in the Layers panel on the right; if no layer is selected, the filter may look like it does nothing.",
+      "In the Layers panel on the right, select the image layer first; if no layer is selected, the filter may look like it's doing nothing.",
       "Choose Filter > Noise > Reduce Noise, and first make sure Preview is checked.",
       `Suggested starting values: Strength ${preset.strength}, Protect Detail ${preset.protectDetail}%, Reduce Color Noise ${preset.colorNoise}%.`,
       preset.note,
-      "If the image gets too plastic or thin gold lines / fragments disappear, lower Strength by 1-2, or raise Protect Detail by 10%.",
-      "If the specks are still obvious, raise Strength by 1, but don't crank it to the max in one go.",
+      "If the image gets too plastic-looking or gold lines/fine fragments disappear, drop Strength by 1-2, or raise Protect Detail by 10%.",
+      "If the grain is still obvious, add 1 to Strength, but don't go straight to the maximum.",
       "If Reduce Noise still isn't usable, try Filter > Blur > Surface Blur, or Filter > Noise > Median, starting Median at 1 or 2.",
-      "Export a PNG; avoid re-saving as a low-quality JPG.",
-      "Come back to this tool and re-upload the fixed version to check the score.",
+      "Export a PNG, to avoid saving as a low-quality JPG again.",
+      "Come back here and re-upload the fixed version to check the score.",
     ],
   };
 }
 
 function textFix() {
   return {
-    title: "Redo small text: use Photopea or Illustrator",
-    summary: "Small text inside an image is the easiest thing to print blurry. If this is a real poster or business card, it's best to re-typeset the text as vector or a high-resolution text layer.",
-    trustNote: "Small text in AI images is often not a clean typeface and easily goes blurry when scaled up. Re-typesetting the text in an editor is usually more reliable than fixing the original.",
+    title: "Re-typeset small text：use Photopea or Illustrator",
+    summary: "Small text inside an image is the most likely to print blurry. If this is a real poster or business card, it's best to re-typeset the text as vector or as a high-resolution text layer.",
+    trustNote: "Small text in AI images often isn't a clean font, and it gets blurry when enlarged. Re-typesetting the text in an editor is usually more reliable than fixing the original image.",
     linkText: "Go to Photopea",
     url: "https://www.photopea.com/",
     steps: [
       "Open the original image as the base layer.",
-      "Use the text tool to re-type the small text; don't just rely on the text in the AI image.",
+      "Use the text tool to retype the small text — don't rely directly on the text in the AI image.",
       "Keep the text at least a safe distance from the trim edge.",
-      "After exporting, come back to this tool and re-check.",
+      "After exporting, come back here to re-evaluate.",
     ],
   };
 }
 
 function finalCheckFix() {
   return {
-    title: "Ready to print: just zoom in and check yourself",
-    summary: "The main risks all pass. Before printing, just put the image at 100% and look over the key areas once.",
-    trustNote: "A digital check can only estimate risk — it doesn't guarantee the print result; the final output still depends on the print shop's specs and the actual run.",
+    title: "Ready to print：just zoom in and check yourself",
+    summary: "The main risks all pass. Before printing, just zoom the image to 100% and look over the key areas yourself.",
+    trustNote: "A digital check can only estimate risk; it doesn't guarantee the print result. The final output still depends on the print shop's specs and the actual print.",
     steps: [
-      "Zoom the image to 100% and check faces, text, logos, edges and shadows.",
-      "Make sure the background extends into the bleed area and important content isn't against the edge.",
-      "If it's all fine, you can hand the file to the print shop for output.",
+      "Zoom the image to 100% and check faces, text, logos, edges, and shadows.",
+      "Confirm that important text and logos aren't right up against the paper's edge.",
+      "If it's fine, you can hand the file to the print shop for output.",
     ],
   };
 }
