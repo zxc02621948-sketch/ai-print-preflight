@@ -66,3 +66,9 @@ https://zxc02621948-sketch.github.io/ai-print-preflight/
 ## 技術說明
 
 純前端靜態工具，不需後端或 API。主要技術為 HTML、CSS、JavaScript，影像取樣使用 Canvas。可直接部署到 GitHub Pages、Netlify、Vercel 或任何靜態網站服務。中英雙語共用相同邏輯：`index.html` / `app.js` 與 `index.en.html` / `app.en.js`。
+
+## ☕ 支持作者
+
+這個工具是免費且開源的。如果它對你有幫助，歡迎請我喝杯咖啡，支持我持續維護與開發更多免費工具：
+
+👉 https://ko-fi.com/kuanming
