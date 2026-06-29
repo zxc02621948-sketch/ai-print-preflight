@@ -1,5 +1,7 @@
 # AI 圖印刷前檢查與修復指南
 
+*(English version below ↓)*
+
 AI Print Preflight Guide 是一個純前端工具，幫你在送印前快速看懂 AI 生成圖片適不適合指定尺寸輸出、哪裡可能要修，以及怎麼把圖交給印刷店。它不取代印刷店或完稿師，是給「不是設計專業」的人先自己看一遍用的。
 
 ## Demo
@@ -72,3 +74,58 @@ https://zxc02621948-sketch.github.io/ai-print-preflight/
 這個工具是免費且開源的。如果它對你有幫助，歡迎請我喝杯咖啡，支持我持續維護與開發更多免費工具：
 
 👉 https://ko-fi.com/kuanming
+
+---
+
+# English: AI Image Print Preflight & Fix Guide
+
+A front-end-only tool that helps you quickly see — before sending a file to print — whether an AI-generated image suits a given output size, what might need fixing, and how to hand it to a print shop. It doesn't replace a print shop or a prepress designer; it's a first self-check for people who aren't design professionals.
+
+## Demo
+GitHub Pages: https://zxc02621948-sketch.github.io/ai-print-preflight/
+Chinese is `index.html`, English is `index.en.html` — switch at the top-right.
+
+## Screenshot
+![Main screen](assets/screenshot-hero.png)
+
+## What it checks
+After you upload an image and pick an output size, it gives a red/yellow/green overall score with per-item notes:
+- **Effective DPI** — computed from your output size. The threshold scales with size: ~300 for normal prints, relaxed only for large prints (banners, billboards), since hitting 300 on huge sizes makes files unmanageable and they're viewed from far away. Above 300 isn't sharper, just gives scaling headroom; small sizes aren't over-demanded either.
+- **Sharpness** — whether the source is crisp, in plain words (sharp / slightly soft / soft), no numbers.
+- **Grain / specks** — how much fine AI grain or compression noise there is (clean / a little grainy / quite grainy).
+
+It only reports what it can actually measure. Color (CMYK shift) can't be measured, and bleed is just a number you'd type, so those were removed — instead they're mentioned in plain language under "suggestions," telling you to flag them with your print shop when needed.
+
+### Size → DPI thresholds
+| Longest output edge | Examples | Green | Yellow | Red |
+|---|---|---|---|---|
+| ≤ 1 m | business card / A4 / A3 / A2 / A1 / poster | ≥ 300 | 250–299 | < 250 |
+| 1–2 m | large poster / standee / small canvas | ≥ 180 | 120–179 | < 120 |
+| 2–5 m | banner | ≥ 120 | 80–119 | < 80 |
+| > 5 m | billboard | ≥ 80 | 50–79 | < 50 |
+
+### Print-result preview
+The middle preview is a draggable comparison: the sharp side is "as is" (the original on your screen), the blurry side is "as printed" (a prediction at this size). When DPI is enough, both look the same; when it's short, the "as printed" side blurs proportionally so you can see the gap with your own eyes.
+
+## Fix suggestions
+Based on the current risks, it lists steps to take with matching free tools:
+- Low resolution → Upscayl (free desktop AI upscaler)
+- Blur / grain / specks → Photopea (in-browser editor)
+- Need editable layers → Canva Magic layers
+- Vectorize a logo/icon → Inkscape Trace Bitmap (advanced, optional)
+
+It also shows "how big you can print" (actual cm at 300 / 150 / 72 DPI) and a "handoff tips" card with beginner-friendly phrasing for talking to a print shop — no jargon dump.
+
+## How to use
+1. Open `index.html` or the live demo above.
+2. Upload an image, or click "Load sample."
+3. Pick an output size (A3, A2, business card, banner, or custom).
+4. Read the overall score and per-item metrics on the right.
+5. Drag the middle comparison to see roughly how sharp it'll print.
+6. Fix with the suggested external tools, save, re-upload, and re-check.
+
+## Disclaimer
+This is a pre-print risk check, not a guarantee of the printed result. Actual quality also depends on the print shop's specs, paper, press and ink, RGB/CMYK conversion, PDF prep, trimming, and bleed. It does not evaluate color (screens are RGB; prints shift) and does not check bleed — for full-bleed jobs (cards, stickers, full-bleed posters), let the print shop handle it.
+
+## ☕ Support
+This tool is free and open source. If it helps you, consider buying me a coffee: https://ko-fi.com/kuanming
