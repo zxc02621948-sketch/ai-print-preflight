@@ -6,16 +6,19 @@ const presets = {
   banner: { width: 3000, height: 900, distance: "far" },
 };
 
-// 依「實際輸出最長邊（mm）」決定可接受的有效 DPI 門檻。
-// 印刷店實務：一般輸出一律以 300 DPI 為標準；只有大圖輸出才放寬，
-// 因為做到 300 檔案會大到電腦跑不動，而且看的距離遠本來就不需要。
-// 超過 300 不會更清楚，只是放大縮小的彈性空間；小尺寸門檻最高也是 300。
+// 依「輸出尺寸 → 典型觀看距離」決定門檻 DPI。
+// 原理：人眼解析力固定，東西越大、看的距離越遠，需要的 DPI 就越低。
+// 小東西貼著看（名片、貼紙）才需要 300；A4/A3 在桌面看 ~200 就很夠；
+// 海報、帆布條在 1~數公尺外看，100 出頭甚至更低就清楚了。
+// 之前不分距離一律抓 300，會把中大尺寸誤判成「很糊」——這版改成分級。
 function getDpiTargets(widthMm, heightMm) {
   const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
-  if (longest <= 1000) return { green: 300, yellow: 250, tier: "standard" };
-  if (longest <= 2000) return { green: 180, yellow: 120, tier: "large" };
-  if (longest <= 5000) return { green: 120, yellow: 80, tier: "xlarge" };
-  return { green: 80, yellow: 50, tier: "huge" };
+  if (longest <= 150) return { green: 300, yellow: 240, tier: "handheld" };  // 名片/明信片/貼紙，約 30cm
+  if (longest <= 450) return { green: 200, yellow: 150, tier: "desk" };      // A4/A3、~30cm 印件，桌面或近牆 ~50cm
+  if (longest <= 900) return { green: 140, yellow: 100, tier: "poster" };    // A2/A1 海報，約 1m
+  if (longest <= 2000) return { green: 110, yellow: 75, tier: "large" };     // 大型海報，約 1.5~2m
+  if (longest <= 5000) return { green: 85, yellow: 55, tier: "xlarge" };     // 帆布條，跨房間
+  return { green: 72, yellow: 50, tier: "huge" };                            // 巨幅，遠距
 }
 
 const state = {
@@ -54,6 +57,7 @@ const els = {
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
   infoPixels: document.querySelector("#infoPixels"),
+  infoOrigDpi: document.querySelector("#infoOrigDpi"),
   infoTarget: document.querySelector("#infoTarget"),
   infoDpi: document.querySelector("#infoDpi"),
   infoUse: document.querySelector("#infoUse"),
@@ -219,6 +223,8 @@ async function loadFile(file) {
   image.onload = async () => {
     state.image = image;
     state.bitmap = await createImageBitmap(file);
+    const origDpi = await readEmbeddedDpi(file);
+    els.infoOrigDpi.textContent = origDpi ? `${origDpi} DPI` : "未標示";
     els.previewImage.src = url;
     els.previewImage.style.display = "block";
     els.emptyState.style.display = "none";
@@ -232,6 +238,57 @@ async function loadFile(file) {
 
 function isSupportedRasterFile(file) {
   return /^(image\/png|image\/jpeg|image\/webp)$/i.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name || "");
+}
+
+// 讀檔案內嵌的 DPI 標籤（Photoshop「解析度」欄看到的那個數字）。
+// 注意：這只是中繼資料，不影響印刷清晰度——清晰度看的是「有效 DPI = 像素 / 輸出尺寸」。
+async function readEmbeddedDpi(file) {
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return readPngDpi(buf, dv);
+    if (buf[0] === 0xff && buf[1] === 0xd8) return readJpegDpi(buf, dv);
+  } catch (e) {
+    /* 讀不到就當沒有標籤 */
+  }
+  return null;
+}
+
+function readPngDpi(buf, dv) {
+  let off = 8; // 跳過 8 byte 簽章
+  while (off + 8 <= buf.length) {
+    const len = dv.getUint32(off);
+    const type = String.fromCharCode(buf[off + 4], buf[off + 5], buf[off + 6], buf[off + 7]);
+    if (type === "pHYs") {
+      const ppuX = dv.getUint32(off + 8); // pixels per unit, X
+      const unit = buf[off + 16]; // 1 = 公尺
+      return unit === 1 && ppuX > 0 ? Math.round(ppuX * 0.0254) : null;
+    }
+    if (type === "IDAT" || type === "IEND") break;
+    off += 12 + len; // length(4) + type(4) + data + CRC(4)
+  }
+  return null;
+}
+
+function readJpegDpi(buf, dv) {
+  let off = 2; // 跳過 SOI
+  while (off + 4 < buf.length) {
+    if (buf[off] !== 0xff) {
+      off++;
+      continue;
+    }
+    const marker = buf[off + 1];
+    if (marker === 0xd9 || marker === 0xda) break; // EOI / 進入影像資料
+    const len = dv.getUint16(off + 2);
+    if (marker === 0xe0 && buf[off + 4] === 0x4a && buf[off + 5] === 0x46 && buf[off + 6] === 0x49 && buf[off + 7] === 0x46) {
+      const units = buf[off + 11]; // 1 = dpi, 2 = dpcm
+      const xden = dv.getUint16(off + 12);
+      if (units === 1 && xden > 0) return xden;
+      if (units === 2 && xden > 0) return Math.round(xden * 2.54);
+    }
+    off += 2 + len;
+  }
+  return null;
 }
 
 function resetForUnsupportedFile(file) {
@@ -257,6 +314,7 @@ function resetForUnsupportedFile(file) {
   setMetric(els.sharpMetric, els.sharpStatus, "--", { level: "", label: "待圖片" });
   setMetric(els.noiseMetric, els.noiseStatus, "--", { level: "", label: "待圖片" });
   els.infoPixels.textContent = "--";
+  els.infoOrigDpi.textContent = "--";
   els.infoTarget.textContent = "--";
   els.infoDpi.textContent = "--";
   els.infoUse.textContent = "--";
