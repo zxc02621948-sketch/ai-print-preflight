@@ -16,11 +16,11 @@ const presets = {
 function getDpiTargets(widthMm, heightMm) {
   const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
   if (longest <= 150) return { green: 300, yellow: 240, tier: "handheld" };  // cards/postcards/stickers, ~30cm
-  if (longest <= 450) return { green: 200, yellow: 150, tier: "desk" };      // A4/A3, ~30cm prints, desk/near wall ~50cm
-  if (longest <= 900) return { green: 140, yellow: 100, tier: "poster" };    // A2/A1 poster, ~1m
+  if (longest <= 450) return { green: 300, yellow: 240, tier: "desk" };      // A4/A3, ~30cm prints, viewed close, keep 300
+  if (longest <= 900) return { green: 300, yellow: 240, tier: "poster" };    // A2/A1 poster, still require 300
   if (longest <= 2000) return { green: 110, yellow: 75, tier: "large" };     // large poster, ~1.5-2m
   if (longest <= 5000) return { green: 85, yellow: 55, tier: "xlarge" };     // banner, across the room
-  return { green: 72, yellow: 50, tier: "huge" };                            // huge format, far away
+  return { green: 80, yellow: 50, tier: "huge" };                            // huge format, far away
 }
 
 const state = {

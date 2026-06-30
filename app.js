@@ -14,11 +14,11 @@ const presets = {
 function getDpiTargets(widthMm, heightMm) {
   const longest = Math.max(Number(widthMm) || 1, Number(heightMm) || 1);
   if (longest <= 150) return { green: 300, yellow: 240, tier: "handheld" };  // 名片/明信片/貼紙，約 30cm
-  if (longest <= 450) return { green: 200, yellow: 150, tier: "desk" };      // A4/A3、~30cm 印件，桌面或近牆 ~50cm
-  if (longest <= 900) return { green: 140, yellow: 100, tier: "poster" };    // A2/A1 海報，約 1m
+  if (longest <= 450) return { green: 300, yellow: 240, tier: "desk" };      // A4/A3、~30cm 印件，常近距離看，維持 300
+  if (longest <= 900) return { green: 300, yellow: 240, tier: "poster" };    // A2/A1 海報，仍要求 300
   if (longest <= 2000) return { green: 110, yellow: 75, tier: "large" };     // 大型海報，約 1.5~2m
   if (longest <= 5000) return { green: 85, yellow: 55, tier: "xlarge" };     // 帆布條，跨房間
-  return { green: 72, yellow: 50, tier: "huge" };                            // 巨幅，遠距
+  return { green: 80, yellow: 50, tier: "huge" };                            // 巨幅，遠距
 }
 
 const state = {
