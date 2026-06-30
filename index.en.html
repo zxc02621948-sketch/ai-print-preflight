@@ -87,14 +87,22 @@
 
             <div class="two-cols">
               <label>
-                Width mm
+                Width <span class="unit-label">mm</span>
                 <input id="widthMm" type="number" min="1" step="1" value="297" />
               </label>
               <label>
-                Height mm
+                Height <span class="unit-label">mm</span>
                 <input id="heightMm" type="number" min="1" step="1" value="420" />
               </label>
             </div>
+
+            <label>
+              Unit
+              <select id="unit">
+                <option value="mm">Millimeter (mm)</option>
+                <option value="cm">Centimeter (cm)</option>
+              </select>
+            </label>
 
             <div class="switch-row">
               <input id="isLogoAsset" type="checkbox" />

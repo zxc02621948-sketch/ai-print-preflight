@@ -49,6 +49,8 @@ const els = {
   preset: document.querySelector("#preset"),
   widthMm: document.querySelector("#widthMm"),
   heightMm: document.querySelector("#heightMm"),
+  unit: document.querySelector("#unit"),
+  unitLabels: document.querySelectorAll(".unit-label"),
   isLogoAsset: document.querySelector("#isLogoAsset"),
   needsEditableLayers: document.querySelector("#needsEditableLayers"),
   analyzeButton: document.querySelector("#analyzeButton"),
@@ -163,12 +165,38 @@ els.dropZone.addEventListener("drop", (event) => {
   loadFile(event.dataTransfer.files[0]);
 });
 
+// Always compute in mm internally; inputs can switch mm / cm. This factor
+// converts the entered value back to mm.
+function unitFactor() {
+  return els.unit && els.unit.value === "cm" ? 10 : 1;
+}
+
+function roundInput(value) {
+  return Math.round(value * 100) / 100;
+}
+
 els.preset.addEventListener("change", () => {
   if (els.preset.value !== "custom") {
     const preset = presets[els.preset.value];
-    els.widthMm.value = preset.width;
-    els.heightMm.value = preset.height;
+    const factor = unitFactor();
+    els.widthMm.value = roundInput(preset.width / factor);
+    els.heightMm.value = roundInput(preset.height / factor);
   }
+  analyze();
+});
+
+els.unit.addEventListener("change", () => {
+  // Convert the current values so the physical size stays the same (30mm ↔ 3cm).
+  const toCm = els.unit.value === "cm";
+  const convert = toCm ? 0.1 : 10;
+  els.widthMm.value = roundInput((Number(els.widthMm.value) || 0) * convert);
+  els.heightMm.value = roundInput((Number(els.heightMm.value) || 0) * convert);
+  const step = toCm ? "0.1" : "1";
+  els.widthMm.step = step;
+  els.heightMm.step = step;
+  els.unitLabels.forEach((label) => {
+    label.textContent = els.unit.value;
+  });
   analyze();
 });
 
@@ -319,11 +347,13 @@ function analyze() {
 }
 
 function getPrintSettings() {
-  const widthMm = Number(els.widthMm.value) || 1;
-  const heightMm = Number(els.heightMm.value) || 1;
+  const factor = unitFactor();
+  const widthMm = (Number(els.widthMm.value) || 1) * factor;
+  const heightMm = (Number(els.heightMm.value) || 1) * factor;
   return {
     widthMm,
     heightMm,
+    unit: els.unit.value,
     dpiTargets: getDpiTargets(widthMm, heightMm),
     isLogoAsset: els.isLogoAsset.checked,
     needsEditableLayers: els.needsEditableLayers.checked,
@@ -530,29 +560,63 @@ function renderPrintSim(metrics) {
 
   const availW = Math.max(1, els.previewFrame.clientWidth - 4);
   const availH = Math.min(540, Math.round(window.innerHeight * 0.62)) || 540;
-  const natW = src.naturalWidth;
-  const natH = src.naturalHeight;
-  const scale = Math.min(availW / natW, availH / natH);
-  const dispW = Math.max(1, Math.round(natW * scale));
-  const dispH = Math.max(1, Math.round(natH * scale));
+  // Size the preview box to the OUTPUT size ratio (not the source image ratio),
+  // so users see the image printed into that shape. Both <img> layers use
+  // object-fit: fill, so a square image dropped into a rectangle deforms to match.
+  const aspect = (metrics.print.widthMm || 1) / (metrics.print.heightMm || 1);
+  let dispW = availW;
+  let dispH = Math.round(dispW / aspect);
+  if (dispH > availH) {
+    dispH = availH;
+    dispW = Math.round(dispH * aspect);
+  }
+  dispW = Math.max(1, dispW);
+  dispH = Math.max(1, dispH);
   els.printSim.style.width = `${dispW}px`;
   els.printSim.style.height = `${dispH}px`;
 
   const target = metrics.print.dpiTargets.green;
   const ratio = clamp(metrics.dpi.effective / target, 0, 1);
 
-  // The "your file's actual" layer uses the same <img>, applying a matching CSS blur based on how much resolution is missing (for illustration only).
-  // We no longer redraw large images onto a canvas, to avoid the downscaled thumbnail looking worse than the left <img>.
-  // When DPI is enough, blur=0, the two layers are pixel-for-pixel identical, so you won't get "it's enough but looks blurrier".
-  els.simActual.src = els.previewImage.src;
-  const blurPx = ratio >= 0.999 ? 0 : clamp((1 - ratio) * dispW * 0.02, 0.4, 16);
-  els.simActual.style.filter = blurPx ? `blur(${blurPx}px)` : "none";
+  // The "how it prints" layer uses downsample-then-upscale to mimic real low resolution:
+  // too few dots = fine detail softens, but big shapes / edges stay crisp — matching real printing.
+  // No more Gaussian blur (it smears the whole image uniformly, far foggier than a real print).
+  // When DPI is enough, use the original image so both layers are pixel-for-pixel identical.
+  els.simActual.style.filter = "none";
+  if (ratio >= 0.999) {
+    els.simActual.src = els.previewImage.src;
+  } else {
+    els.simActual.src = downsampleDataUrl(src, dispW, dispH, ratio);
+  }
 
   setSimSlider(Number(els.simSlider.value));
   renderSimCaption(metrics, ratio);
   els.printSim.hidden = false;
   els.simCaption.hidden = false;
   els.emptyState.style.display = "none";
+}
+
+// Shrink the image to its real deliverable detail (ratio x display size), then scale back up.
+// Big shapes stay crisp and only fine detail softens — closer to real low-res print than Gaussian blur.
+function downsampleDataUrl(src, dispW, dispH, ratio) {
+  const lowW = Math.max(1, Math.round(dispW * ratio));
+  const lowH = Math.max(1, Math.round(dispH * ratio));
+  const small = document.createElement("canvas");
+  small.width = lowW;
+  small.height = lowH;
+  const sctx = small.getContext("2d");
+  sctx.imageSmoothingEnabled = true;
+  sctx.imageSmoothingQuality = "high";
+  sctx.drawImage(src, 0, 0, lowW, lowH);
+
+  const out = document.createElement("canvas");
+  out.width = dispW;
+  out.height = dispH;
+  const octx = out.getContext("2d");
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = "high";
+  octx.drawImage(small, 0, 0, lowW, lowH, 0, 0, dispW, dispH);
+  return out.toDataURL("image/png");
 }
 
 function setSimSlider(value) {
@@ -583,7 +647,9 @@ function hidePrintSim() {
 
 function renderImageInfo(metrics) {
   els.infoPixels.textContent = `${metrics.pixelWidth} x ${metrics.pixelHeight} px`;
-  els.infoTarget.textContent = `${metrics.print.widthMm} x ${metrics.print.heightMm} mm`;
+  const unit = metrics.print.unit || "mm";
+  const div = unit === "cm" ? 10 : 1;
+  els.infoTarget.textContent = `${roundInput(metrics.print.widthMm / div)} x ${roundInput(metrics.print.heightMm / div)} ${unit}`;
   els.infoDpi.textContent = `${Math.round(metrics.dpi.effective)} DPI`;
   els.infoUse.textContent = getUseLabel();
 }

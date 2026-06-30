@@ -87,14 +87,22 @@
 
             <div class="two-cols">
               <label>
-                寬度 mm
+                寬度 <span class="unit-label">mm</span>
                 <input id="widthMm" type="number" min="1" step="1" value="297" />
               </label>
               <label>
-                高度 mm
+                高度 <span class="unit-label">mm</span>
                 <input id="heightMm" type="number" min="1" step="1" value="420" />
               </label>
             </div>
+
+            <label>
+              單位
+              <select id="unit">
+                <option value="mm">公釐 (mm)</option>
+                <option value="cm">公分 (cm)</option>
+              </select>
+            </label>
 
             <div class="switch-row">
               <input id="isLogoAsset" type="checkbox" />
