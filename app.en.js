@@ -1147,21 +1147,24 @@ function collectFixes(metrics) {
 function upscaleFix(metrics) {
   const upscale = getUpscalePreset(metrics);
   const isLogoAsset = metrics.print.isLogoAsset;
-  const title = "Fix resolution：download Upscayl desktop";
-  const summary = `Effective DPI is currently about ${upscale.currentDpi}, and this use suggests reaching about ${upscale.targetDpi} DPI. Start with ${upscale.scale}x upscaling, which should reach about ${upscale.expectedDpi} DPI.${
+  const title = "Fix resolution: free AI upscaling (web, no install — or desktop)";
+  const summary = `Effective DPI is currently about ${upscale.currentDpi}, and this use suggests reaching about ${upscale.targetDpi} DPI. Start with ${upscale.scale}x upscaling, which should reach about ${upscale.expectedDpi} DPI. There are two free ways — a no-install website or a desktop app — pick whichever suits you.${
     isLogoAsset ? " This is the most effortless main route for most logo / badge print jobs; you can save vectorizing for when you need very large output or to recolor/split objects." : ""
   }`;
+  const webNote = "Two free routes — pick by what kind of image you have: (1) Anime / illustration → the Bigjpg website (no install, best-in-class for this): just pick your image and a scale factor, but it uploads your image (servers default to mainland China; free uploads auto-deleted within 24h) and the free tier caps at 3000×3000px / 5MB. (2) Realistic / photo-style → the Upscayl desktop app (bundles photo models like Real-ESRGAN and Remacri, so realistic detail comes out more natural): processed on your own computer, nothing uploaded, no size limit, but you have to download and install it. Neither can invent detail that isn't there, so always zoom to 100% after upscaling.";
   const trustNote = isLogoAsset
-    ? "For most logos / icons, if they're just for poster, sticker, or sign output, a high-resolution PNG/PDF is usually enough. You only need to vectorize separately when you need long-term reuse, free recoloring, splitting objects, or the print shop specifically asks for a vector file. Upscayl is a free, open-source AI image-upscaling desktop app, good for bringing a low-resolution image up to the printable threshold first."
-    : "Upscayl is a free, open-source AI image-upscaling desktop app. The image is processed locally on your own computer, which is good for bringing a low-resolution AI image up close to print requirements first. Processing speed depends on your computer's CPU/GPU; if your computer is slow, start with 2x.";
+    ? "For most logos / icons, if they're just for poster, sticker, or sign output, a high-resolution PNG/PDF is usually enough. You only need to vectorize separately when you need long-term reuse, free recoloring, splitting objects, or the print shop specifically asks for a vector file. " + webNote
+    : webNote + " (Upscayl's speed depends on your computer's CPU/GPU; if it's slow, start with 2x.)";
   const steps = [
+    "<strong>No-install route (easiest for anime / illustration):</strong> open the free website <a href=\"https://bigjpg.com/en\" target=\"_blank\" rel=\"noopener\">Bigjpg</a>, pick your image and a scale factor (try 2x first), then download the PNG. It's best-in-class for anime / illustration. Note: free tier caps at 3000×3000px / 5MB and it uploads your image (China server by default, auto-deleted within 24h). <strong>If your image is realistic / photo-style, or larger, or you'd rather not upload, use the Upscayl route below.</strong>",
+    "<strong>Local route (realistic / photo-style, or no upload):</strong> here are the steps for the free, open-source Upscayl desktop app —",
     "Open the Upscayl download page and download the Windows desktop version.",
     "After installing, open Upscayl on your computer — you don't need to use the online Dashboard.",
     "If you see credits, Start free trial, or Upgrade, you're on the cloud version; go back to the download page and get the desktop version instead.",
     "Import the original image.",
     `For Resolution Scale, start with ${upscale.scale}x. Estimated output is about ${upscale.outputWidth} x ${upscale.outputHeight} px.`,
     upscale.caution,
-    "For Model, start with Upscayl Standard; for character faces you can also test another model and compare the detail.",
+    "For Model: use Upscayl Standard or Digital Art for anime / illustration; for realistic / photo-style images choose a photo model like Real-ESRGAN or Remacri for more natural detail. For character faces, test another model and compare.",
     "Set Output Format to PNG, to avoid low-quality JPG.",
     "After output, zoom in and check faces, edges, lines, and shadows — don't just look at the thumbnail.",
     "Come back here, click re-upload the fixed version, and check the score.",

@@ -38,7 +38,7 @@ The middle preview is a draggable comparison: the sharp side is "as is" (the ori
 
 ## Fix suggestions
 Based on the current risks, it lists steps to take with matching free tools:
-- Low resolution → Upscayl (free desktop AI upscaler)
+- Low resolution → Bigjpg (free web AI upscaler, no install) or Upscayl (free desktop, processed locally)
 - Blur / grain / specks → Photopea (in-browser editor)
 - Need editable layers → Canva Magic layers
 - Vectorize a logo/icon → Inkscape Trace Bitmap (advanced, optional)
@@ -99,7 +99,7 @@ GitHub Pages:https://zxc02621948-sketch.github.io/ai-print-preflight/
 
 ### 修復建議
 依目前的風險,工具會列出該做的步驟,並附對應的免費工具:
-- 解析度不足 → Upscayl(免費桌面版 AI 放大)
+- 解析度不足 → Bigjpg(免安裝網站 AI 放大)或 Upscayl(免費桌面版,本機不上傳)
 - 模糊 / 顆粒髒點 → Photopea(瀏覽器修圖)
 - 需要拆可編輯圖層 → Canva 魔法圖層
 - Logo / 圖示要向量化 → Inkscape Trace Bitmap(進階,非必做)

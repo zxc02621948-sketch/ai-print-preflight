@@ -1141,21 +1141,24 @@ function collectFixes(metrics) {
 function upscaleFix(metrics) {
   const upscale = getUpscalePreset(metrics);
   const isLogoAsset = metrics.print.isLogoAsset;
-  const title = "修解析度：下載 Upscayl 桌面版";
-  const summary = `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。${
+  const title = "修解析度：免費 AI 放大（免安裝網站 or 桌面版）";
+  const summary = `目前有效 DPI 約 ${upscale.currentDpi}，此用途建議達到約 ${upscale.targetDpi} DPI。建議先用 ${upscale.scale}x 放大，預估可到約 ${upscale.expectedDpi} DPI。有「免安裝網站」與「本機桌面版」兩種免費做法，任選其一。${
     isLogoAsset ? " 這是多數 Logo / 徽章送印情境最省事的主路線；向量化可留到需要超大輸出或改色拆物件時再做。" : ""
   }`;
+  const webNote = "放大有兩條免費路線，先看你的圖是哪種：①動漫 / 插畫 → Bigjpg 網站（免安裝，這類放大同類最強），選圖選倍數就好，但會把圖上傳（預設中國大陸伺服器、免費上傳的圖 24 小時內自動刪除）、免費版上限 3000×3000px / 5MB；②寫實 / 擬真照片風 → Upscayl 桌面版（內建 Real-ESRGAN、Remacri 等照片模型，寫實細節較自然），圖在你自己電腦處理、不上傳、沒有容量限制，但要下載安裝。兩者都無法無中生有補回不存在的細節，放大後都要放大 100% 檢查。";
   const trustNote = isLogoAsset
-    ? "多數 Logo / 圖示若只是海報、貼紙或招牌輸出，高解析 PNG/PDF 通常已經足夠。只有需要長期重複使用、任意改色、拆物件或店家明確要求向量檔時，才需要另外做向量化。Upscayl 是免費開源的 AI 圖片放大桌面軟體，適合先把低解析圖拉到可送印門檻。"
-    : "Upscayl 是免費開源的 AI 圖片放大桌面軟體，圖片在本機電腦處理，適合把低解析 AI 圖先放大到接近印刷需求。處理速度取決於你的電腦 CPU/GPU，若電腦較慢請先用 2x。";
+    ? "多數 Logo / 圖示若只是海報、貼紙或招牌輸出，高解析 PNG/PDF 通常已經足夠。只有需要長期重複使用、任意改色、拆物件或店家明確要求向量檔時，才需要另外做向量化。" + webNote
+    : webNote + "（Upscayl 處理速度取決於你的電腦 CPU/GPU，電腦較慢請先用 2x。）";
   const steps = [
+    "<strong>免安裝路線（動漫 / 插畫最省事）：</strong>打開免費網站 <a href=\"https://bigjpg.com/tw\" target=\"_blank\" rel=\"noopener\">Bigjpg</a>，選圖片、選放大倍數（先試 2x），完成後下載 PNG。它對動漫 / 插畫放大是同類最強。※ 免費版上限 3000×3000px / 5MB、會上傳你的圖（預設中國伺服器、24h 內自動刪除）。<strong>如果是寫實 / 擬真照片風的圖，或圖較大、想不上傳，就走下面的 Upscayl。</strong>",
+    "<strong>本機路線（寫實 / 擬真、或不想上傳）：</strong>以下是 Upscayl 免費開源桌面版的步驟 ——",
     "打開 Upscayl 下載頁，下載 Windows 桌面版。",
     "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
     "如果畫面出現 credits、Start free trial 或 Upgrade，代表你在雲端版，請回到下載頁改拿桌面版。",
     "匯入原圖。",
     `Resolution Scale 建議先選 ${upscale.scale}x。預估輸出約 ${upscale.outputWidth} x ${upscale.outputHeight} px。`,
     upscale.caution,
-    "Model 建議先用 Upscayl Standard；如果是角色臉部可再測另一個模型比較細節。",
+    "Model：動漫 / 插畫用 Upscayl Standard 或 Digital Art；寫實 / 擬真照片建議選 Real-ESRGAN 或 Remacri 這類照片模型，細節較自然。角色臉部可多測一個模型比較。",
     "Output Format 選 PNG，避免用低品質 JPG。",
     "輸出後請放大看臉、邊緣、線條和暗部，不要只看縮圖。",
     "回到本工具，點重新上傳修正版檢查分數。",
