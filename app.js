@@ -1150,7 +1150,7 @@ function upscaleFix(metrics) {
     ? "多數 Logo / 圖示若只是海報、貼紙或招牌輸出，高解析 PNG/PDF 通常已經足夠。只有需要長期重複使用、任意改色、拆物件或店家明確要求向量檔時，才需要另外做向量化。" + webNote
     : webNote + "（Upscayl 處理速度取決於你的電腦 CPU/GPU，電腦較慢請先用 2x。）";
   const steps = [
-    "<strong>免安裝路線（動漫 / 插畫最省事）：</strong>打開免費網站 <a href=\"https://bigjpg.com/tw\" target=\"_blank\" rel=\"noopener\">Bigjpg</a>，選圖片、選放大倍數（先試 2x），完成後下載 PNG。它對動漫 / 插畫放大是同類最強。※ 免費版上限 3000×3000px / 5MB、會上傳你的圖（預設中國伺服器、24h 內自動刪除）。<strong>如果是寫實 / 擬真照片風的圖，或圖較大、想不上傳，就走下面的 Upscayl。</strong>",
+    "<strong>免安裝路線（動漫 / 插畫最省事）：</strong>選圖、選放大倍數（先試 2x），完成後下載 PNG —— 它對動漫 / 插畫放大是同類最強。<br><a href=\"https://bigjpg.com/tw\" target=\"_blank\" rel=\"noopener\" style=\"display:inline-block;margin:12px 0;padding:11px 20px;background:#0f766e;color:#fff;border-radius:10px;text-decoration:none;font-weight:800;font-size:1.02em;\">🔗 前往 Bigjpg 免費放大</a><br>※ 免費版上限 3000×3000px / 5MB、會上傳你的圖（預設中國伺服器、24h 內自動刪除）。<strong>如果是寫實 / 擬真照片風的圖，或圖較大、想不上傳，就走下面的 Upscayl。</strong>",
     "<strong>本機路線（寫實 / 擬真、或不想上傳）：</strong>以下是 Upscayl 免費開源桌面版的步驟 ——",
     "打開 Upscayl 下載頁，下載 Windows 桌面版。",
     "安裝後在電腦上開啟 Upscayl，不需要使用線上 Dashboard。",
